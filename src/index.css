@@ -1,0 +1,640 @@
+@import "tailwindcss";
+
+@theme {
+  --color-tealBase: #5dbfb3;
+  --color-tealDark: #3fa498;
+  --color-tealDeep: #1b4a45;
+  --color-arcadeYellow: #f5c344;
+  --color-arcadeYellowDark: #d8a121;
+  --color-arcadeOrange: #ef6a43;
+  --color-terminalGreen: #45f094;
+  --color-void: #07080e;
+  --color-deep: #0a0b12;
+  --color-surface: #10121a;
+  --color-surface-bright: #171924;
+  --color-border-subtle: #1e2233;
+  --color-border-active: #ffb800;
+  --color-tactical: #ffb800;
+  --color-tactical-hover: #e5a600;
+  --color-tactical-dark: #b28000;
+  --color-arcadeTeal: #00e5ff;
+  --color-muted: #7a829e;
+  --color-text: #f1f5f9;
+  --font-pixel: "Silkscreen", monospace;
+  --font-vt: "VT323", monospace;
+  --font-sans: "Space Grotesk", sans-serif;
+  --font-mono: "Space Mono", monospace;
+  --font-press-start: "Press Start 2P", monospace;
+  --font-space-mono: "Space Mono", monospace;
+  --font-arcade: "Press Start 2P", monospace;
+  --font-mono-tech: "Space Mono", monospace;
+  --font-sans-tech: "Space Grotesk", sans-serif;
+  --color-sync: #1dd3b0;
+}
+
+@layer base {
+  body {
+    background-color: #030712;
+    overflow-x: hidden;
+    user-select: none;
+    font-family: var(--font-sans);
+  }
+}
+
+/* Magnifier hover effect — applied via JS class toggle */
+.cursor-magnify-active {
+  transform: scale(1.08);
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  display: inline-block;
+}
+
+/* ── Lenis smooth-scroll integration ───────────────────────────────────── */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+
+.lenis.lenis-stopped {
+  overflow: hidden;
+}
+
+.scanlines-overlay {
+  background: linear-gradient(
+    rgba(18, 16, 16, 0) 50%,
+    rgba(0, 0, 0, 0.18) 50%
+  ), linear-gradient(
+    90deg,
+    rgba(0, 240, 255, 0.015),
+    rgba(0, 0, 0, 0.02),
+    rgba(147, 51, 234, 0.015)
+  );
+  background-size: 100% 4px, 6px 100%;
+  pointer-events: none;
+}
+
+.voxel-3d-text {
+  color: #ffffff;
+  text-transform: uppercase;
+  line-height: 0.82;
+  letter-spacing: 0.06em;
+  transform-style: preserve-3d;
+  will-change: transform;
+  filter: none;
+}
+
+.voxel-white-block {
+  color: #ffffff;
+  text-shadow:
+    1px 1px 0 #d1d5db,
+    2px 2px 0 #9ca3af,
+    3px 3px 0 #6b7280,
+    4px 4px 0 #4b5563,
+    5px 5px 0 #374151,
+    6px 6px 0 #1f2937,
+    7px 6px 0 #111827,
+    8px 6px 0 #030712;
+}
+
+/* Mobile optimized text shadow - less depth */
+@media (max-width: 640px) {
+  .voxel-white-block {
+    text-shadow:
+      1px 1px 0 #d1d5db,
+      2px 2px 0 #9ca3af,
+      3px 3px 0 #6b7280,
+      4px 4px 0 #4b5563,
+      5px 6px 0 #374151;
+  }
+}
+
+.voxel-yellow-block {
+  color: #fef08a;
+  text-shadow:
+    1px 1px 0 #fde047,
+    2px 2px 0 #eab308,
+    3px 3px 0 #ca8a04,
+    4px 3px 0 #a16207,
+    5px 3px 0 #854d0e,
+    6px 3px 0 #713f12,
+    7px 3px 0 #422006,
+    8px 3px 0 #1c0e02;
+}
+
+/* Mobile optimized text shadow - less depth */
+@media (max-width: 640px) {
+  .voxel-yellow-block {
+    text-shadow:
+      1px 1px 0 #fde047,
+      2px 2px 0 #eab308,
+      3px 3px 0 #ca8a04,
+      4px 3px 0 #a16207,
+      5px 3px 0 #854d0e;
+  }
+}
+
+.arcade-begin-btn {
+  background-color: #f5c344;
+  box-shadow:
+    0 8px 0 #b38217,
+    0 14px 18px rgba(0, 0, 0, 0.65);
+  border: 3px solid #1a2a30;
+  transition: all 0.08s ease-in-out;
+}
+
+.arcade-begin-btn:hover {
+  background-color: #ffd15c;
+  transform: translateY(-2px);
+  box-shadow:
+    0 10px 0 #b38217,
+    0 18px 24px rgba(0, 0, 0, 0.75);
+}
+
+.arcade-begin-btn:active {
+  transform: translateY(6px);
+  box-shadow:
+    0 2px 0 #b38217,
+    0 4px 8px rgba(0, 0, 0, 0.5);
+}
+
+@keyframes bobbing {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-16px) rotate(2deg);
+  }
+}
+
+.mascot-float {
+  animation: bobbing 4.5s ease-in-out infinite;
+}
+
+.retro-nav-pill {
+  box-shadow: 0 4px 0 #0d2824;
+  transition: all 0.1s ease;
+}
+.retro-nav-pill:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 0 #0d2824;
+}
+.retro-nav-pill:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 #0d2824;
+}
+
+@keyframes floatParticle {
+  0% { transform: translateY(0) rotate(0deg); opacity: 0.3; }
+  50% { opacity: 0.8; }
+  100% { transform: translateY(-120px) rotate(360deg); opacity: 0; }
+}
+.pixel-sparkle {
+  animation: floatParticle 6s linear infinite;
+}
+
+/* ── Holographic node float ──────────────────────────────────────────── */
+@keyframes holoFloat {
+  0%, 100% { transform: translate(-50%, -50%) translateY(0px);   }
+  50%       { transform: translate(-50%, -50%) translateY(-10px); }
+}
+.holo-float {
+  animation: holoFloat 3.8s ease-in-out infinite;
+}
+
+/* ── Holographic shimmer sweep ──────────────────────────────────────── */
+@keyframes holoShimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+.holo-shimmer {
+  background: linear-gradient(
+    105deg,
+    transparent 30%,
+    rgba(255,255,255,0.18) 50%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  animation: holoShimmer 2.2s linear infinite;
+}
+
+/* ── Neon pulse (for footer status dot ring) ────────────────────────── */
+@keyframes neonPulse {
+  0%, 100% { box-shadow: 0 0 6px #00ff87, 0 0 12px #00ff8766; }
+  50%       { box-shadow: 0 0 14px #00ff87, 0 0 28px #00ff87aa; }
+}
+.neon-pulse {
+  animation: neonPulse 2s ease-in-out infinite;
+}
+
+/* ── Saturn atmosphere breathe ──────────────────────────────────────── */
+@keyframes atmoBreathe {
+  0%, 100% { opacity: 0.18; transform: scale(1);    }
+  50%       { opacity: 0.28; transform: scale(1.015); }
+}
+.atmo-breathe {
+  animation: atmoBreathe 4s ease-in-out infinite;
+}
+
+/* ── Shooting star tail ─────────────────────────────────────────────── */
+@keyframes shootStar {
+  0%   { opacity: 0;   transform: translateX(-40px) translateY(-40px); }
+  15%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { opacity: 0;   transform: translateX(300px) translateY(300px); }
+}
+.shoot-star {
+  animation: shootStar 1.1s ease-in-out forwards;
+}
+
+/* ── Nebula drift ────────────────────────────────────────────────────── */
+@keyframes nebulaDrift {
+  0%   { transform: translate(0px,  0px)  scale(1.03); }
+  25%  { transform: translate(8px,  -5px) scale(1.04); }
+  50%  { transform: translate(12px, 6px)  scale(1.03); }
+  75%  { transform: translate(-4px, 10px) scale(1.04); }
+  100% { transform: translate(0px,  0px)  scale(1.03); }
+}
+.nebula-drift {
+  animation: nebulaDrift 18s ease-in-out infinite;
+}
+
+/* ── Ticker slide ────────────────────────────────────────────────────── */
+@keyframes tickerSlideIn {
+  from { opacity: 0; transform: translateY(8px);  }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+@keyframes tickerSlideOut {
+  from { opacity: 1; transform: translateY(0);    }
+  to   { opacity: 0; transform: translateY(-8px); }
+}
+
+/* ── Waveform bar equaliser ──────────────────────────────────────────── */
+@keyframes eqBounce {
+  0%, 100% { height: 4px;  }
+  50%       { height: 18px; }
+}
+.eq-bar {
+  animation: eqBounce var(--dur, 0.9s) ease-in-out infinite;
+}
+
+/* ── Glow text utility ───────────────────────────────────────────────── */
+.text-glow-cyan {
+  text-shadow: 0 0 8px #00f5ff88, 0 0 20px #00f5ff33;
+}
+.text-glow-yellow {
+  text-shadow: 0 0 8px #f5c34488, 0 0 16px #f5c34444;
+}
+.text-glow-green {
+  text-shadow: 0 0 8px #00ff8788, 0 0 16px #00ff8744;
+}
+
+/* ── Glassmorphism card ──────────────────────────────────────────────── */
+.glass-card {
+  background: linear-gradient(
+    135deg,
+    rgba(255,255,255,0.10) 0%,
+    rgba(255,255,255,0.04) 50%,
+    rgba(0,0,0,0.15) 100%
+  );
+  backdrop-filter: blur(10px) saturate(1.4);
+  border: 1px solid rgba(255,255,255,0.12);
+}
+
+/* ── Holographic border ──────────────────────────────────────────────── */
+@keyframes holoBorderRotate {
+  0%   { filter: hue-rotate(0deg);   }
+  100% { filter: hue-rotate(360deg); }
+}
+.holo-border {
+  animation: holoBorderRotate 4s linear infinite;
+}
+
+/* ── Asteroid entry vibration ───────────────────────────────────────────── */
+@keyframes asteroidShake {
+  0%,100% { transform: translate(0,0) rotate(0deg); }
+  10%     { transform: translate(-3px, 2px) rotate(-1.5deg); }
+  20%     { transform: translate(3px, -2px) rotate(1.5deg); }
+  30%     { transform: translate(-2px, 3px) rotate(-1deg); }
+  40%     { transform: translate(2px, -3px) rotate(1deg); }
+  50%     { transform: translate(-3px, -2px) rotate(-1.5deg); }
+  60%     { transform: translate(3px, 2px) rotate(1.5deg); }
+  70%     { transform: translate(-2px, -3px) rotate(-1deg); }
+  80%     { transform: translate(2px, 3px) rotate(1deg); }
+  90%     { transform: translate(-1px, 1px) rotate(-0.5deg); }
+}
+.asteroid-shake {
+  animation: asteroidShake 0.45s ease-in-out 3;
+}
+
+/* ── Glimpse HUD photo cards ───────────────────────────────────────────── */
+.glimpse-photo {
+  position: absolute;
+  left: 0;
+  top: 0;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(56, 189, 248, 0.30);
+  border-radius: 4px;
+  box-shadow:
+    0 0 15px rgba(56, 189, 248, 0.15),
+    0 4px 24px rgba(3, 7, 18, 0.70),
+    inset 0 0 0 1px rgba(56, 189, 248, 0.06);
+  transform-origin: center center;
+  transform-style: flat;
+  -webkit-tap-highlight-color: transparent;
+  backface-visibility: hidden;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.glimpse-photo:hover {
+  border-color: rgba(56, 189, 248, 0.65);
+  box-shadow:
+    0 0 28px rgba(56, 189, 248, 0.35),
+    0 0 8px  rgba(168, 85, 247, 0.25),
+    0 4px 24px rgba(3, 7, 18, 0.80),
+    inset 0 0 0 1px rgba(56, 189, 248, 0.15);
+}
+
+.glimpse-photo img {
+  position: absolute;
+  inset: 0 0 28px 0;
+  display: block;
+  object-fit: cover;
+  border-radius: 3px 3px 0 0;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.glimpse-corner {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+}
+
+.glimpse-corner::before,
+.glimpse-corner::after {
+  content: '';
+  position: absolute;
+  background: rgba(56, 189, 248, 0.80);
+  box-shadow: 0 0 4px rgba(56, 189, 248, 0.60);
+}
+.glimpse-corner::before { width: 100%; height: 1.5px; }
+.glimpse-corner::after  { width: 1.5px; height: 100%; }
+
+.glimpse-corner--tl { top: 4px; left: 4px; }
+.glimpse-corner--tl::before { top: 0; left: 0; }
+.glimpse-corner--tl::after  { top: 0; left: 0; }
+
+.glimpse-corner--tr { top: 4px; right: 4px; }
+.glimpse-corner--tr::before { top: 0; right: 0; left: auto; }
+.glimpse-corner--tr::after  { top: 0; right: 0; left: auto; }
+
+.glimpse-corner--bl { bottom: 32px; left: 4px; }
+.glimpse-corner--bl::before { bottom: 0; top: auto; left: 0; }
+.glimpse-corner--bl::after  { bottom: 0; top: auto; left: 0; }
+
+.glimpse-corner--br { bottom: 32px; right: 4px; }
+.glimpse-corner--br::before { bottom: 0; top: auto; right: 0; left: auto; }
+.glimpse-corner--br::after  { bottom: 0; top: auto; right: 0; left: auto; }
+
+.glimpse-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  border-top: 1px solid rgba(56, 189, 248, 0.25);
+  background: rgba(2, 8, 23, 0.65);
+  border-radius: 0 0 3px 3px;
+  pointer-events: none;
+  user-select: none;
+  overflow: hidden;
+}
+
+.glimpse-caption__label {
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  color: #38bdf8;
+  text-shadow:
+    0 0 6px rgba(56, 189, 248, 0.90),
+    0 0 14px rgba(56, 189, 248, 0.45);
+  white-space: nowrap;
+}
+
+.glimpse-caption__coords {
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: 11px;
+  letter-spacing: 0.10em;
+  color: rgba(168, 85, 247, 0.85);
+  text-shadow:
+    0 0 5px rgba(168, 85, 247, 0.70),
+    0 0 10px rgba(168, 85, 247, 0.35);
+  white-space: nowrap;
+}
+
+/* ── Prize Pool page styles ────────────────────────────────────────────── */
+
+@keyframes prize-pulse-glow {
+  0%   {
+    box-shadow:
+      0 0 12px rgba(234, 179, 8, 0.25),
+      0 0 28px rgba(234, 179, 8, 0.12),
+      inset 0 0 0 2px rgba(234, 179, 8, 0.35);
+    border-color: rgba(234, 179, 8, 0.40);
+  }
+  100% {
+    box-shadow:
+      0 0 30px rgba(234, 179, 8, 0.50),
+      0 0 60px rgba(234, 179, 8, 0.22),
+      inset 0 0 0 2px rgba(234, 179, 8, 0.60);
+    border-color: rgba(234, 179, 8, 0.75);
+  }
+}
+
+.prize-hero-card {
+  position: relative;
+  border-radius: 1rem;
+  border: 2px solid rgba(234, 179, 8, 0.40);
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+  backdrop-filter: blur(20px);
+  padding: 2.5rem;
+  animation: prize-pulse-glow 3s ease-in-out infinite alternate;
+  transition: transform 0.3s ease;
+}
+
+.prize-hero-card:hover {
+  transform: translateY(-4px);
+}
+
+.prize-hero-amount {
+  text-shadow:
+    0 0 14px rgba(234, 179, 8, 0.80),
+    0 0 32px rgba(234, 179, 8, 0.45),
+    0 0 60px rgba(234, 179, 8, 0.20);
+}
+
+@media (min-width: 768px) {
+  .md\:row-span-2 {
+    grid-row: span 2 / span 2;
+  }
+  .md\:col-span-2 {
+    grid-column: span 2 / span 2;
+  }
+}
+
+.prize-pill-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: 12px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: default;
+
+  color: var(--pill-color);
+  background: var(--pill-bg);
+  border: 1px solid var(--pill-border);
+  box-shadow: 0 0 6px var(--pill-glow);
+
+  transition: background 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.prize-pill-tag:hover {
+  background: color-mix(in srgb, var(--pill-color) 20%, transparent);
+  border-color: var(--pill-color);
+  box-shadow: 0 0 12px var(--pill-glow-hover), 0 0 4px var(--pill-glow);
+  transform: translateY(-2px);
+}
+
+.prize-split-grid {
+  grid-template-columns: 1fr 1fr;
+}
+
+@media (max-width: 1023px) {
+  .prize-split-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Retro-arcade auth page ───────────────────────────────────────────── */
+
+/* CRT scanlines (crisp, zero-slop linear gradients) */
+.crt-scanlines {
+  background: linear-gradient(
+    rgba(18, 16, 16, 0) 50%,
+    rgba(0, 0, 0, 0.45) 50%
+  );
+  background-size: 100% 4px;
+  pointer-events: none;
+}
+
+/* Tactical Blueprint grid without blurry gradients */
+.blueprint-grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 184, 0, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 184, 0, 0.05) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* Distinct arcade pixel drop shadow identical to Prize Pool reference */
+.pixel-shadow-amber {
+  text-shadow: 3px 3px 0px #b28000;
+}
+.pixel-shadow-white {
+  text-shadow: 3px 3px 0px #1e2233;
+}
+
+/* Retro Blinking Cursor */
+@keyframes blink-cursor {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.cursor-blink {
+  animation: blink-cursor 1s infinite;
+}
+
+/* Corner HUD brackets — adds the 2px arms on top/bottom/left/right */
+.hud-bracket {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-color: #ffb800;
+  pointer-events: none;
+}
+
+/* ── Auth page cursor override ────────────────────────────────────────────
+ * The global landing page rule hides the native cursor everywhere so the
+ * custom rocket cursor takes over. On /auth we need real text cursor for
+ * typing into the form fields — so restore native cursors inside .auth-page.
+ * The landing cursor keeps working because it's mounted at the App level,
+ * not via this CSS rule.
+ */
+.auth-page input,
+.auth-page textarea,
+.auth-page select {
+  cursor: text;
+  caret-color: #ffb800;
+}
+
+.auth-page button,
+.auth-page a,
+.auth-page [role="button"] {
+  cursor: pointer;
+}
+
+.auth-page label {
+  cursor: default;
+}
+
+/* ── Operative dashboard / profile page ─────────────────────────────────── */
+
+/* Subtle tactical matrix grid (amber, larger 36px cells) */
+.grid-bg {
+  background-image:
+    linear-gradient(to right, rgba(255, 184, 0, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 184, 0, 0.04) 1px, transparent 1px);
+  background-size: 36px 36px;
+}
+
+/* Ribbed tactile texture for arcade push buttons */
+.btn-ribbed {
+  background-image: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.14),
+    rgba(0, 0, 0, 0.14) 2px,
+    transparent 2px,
+    transparent 4px
+  );
+}
+
+/* Slim custom scrollbar inside the operative console */
+.operative-dashboard ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.operative-dashboard ::-webkit-scrollbar-track {
+  background: #0d0e15;
+}
+.operative-dashboard ::-webkit-scrollbar-thumb {
+  background: #252836;
+  border-radius: 2px;
+}
+.operative-dashboard ::-webkit-scrollbar-thumb:hover {
+  background: #ffb800;
+}
