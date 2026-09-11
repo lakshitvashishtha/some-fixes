@@ -873,7 +873,14 @@ app.get('/api/teams/my', apiLimiter, async (req, res) => {
       (t.leader_email || '').toLowerCase() === email ||
       (t.leader?.email || '').toLowerCase() === email ||
       (t.members || []).some(m => (m.email || '').toLowerCase() === email)
-    )
+    ).map(t => {
+      const isLeader = (t.leader_email || '').toLowerCase() === email || (t.leader?.email || '').toLowerCase() === email
+      return {
+        ...t,
+        isLeader,
+        isLeaderForThisTeam: isLeader,
+      }
+    })
     res.json({ success: true, teams: myTeams })
   } catch (err) {
     safeErrorResponse(res, err)

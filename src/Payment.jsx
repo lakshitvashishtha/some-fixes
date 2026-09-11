@@ -110,32 +110,57 @@ export default function Payment() {
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
 
+  const [currentUser, setCurrentUser] = useState(null)
+
   useEffect(() => {
     let cancelled = false
 
     fetchMe()
+      .then((meData) => {
+        const user = meData?.user
+        if (!user) {
+          if (!cancelled) navigate('/auth')
+          return
+        }
+        if (!cancelled) setCurrentUser(user)
+
+        return fetchMyTeams().then((data) => {
+          if (cancelled) return
+          const teams = data?.teams || []
+          const userEmail = (user.email || '').toLowerCase().trim()
+
+          // Resolve the user's squad: match leader email, members, or leader flag
+          const myTeam =
+            teams.find(
+              (t) =>
+                (t.leader?.email || t.leader_email || '').toLowerCase().trim() === userEmail ||
+                (t.members || []).some((m) => (m.email || '').toLowerCase().trim() === userEmail) ||
+                t.isLeaderForThisTeam
+            ) ||
+            teams.find((t) => t.isLeaderForThisTeam) ||
+            teams[0] ||
+            null
+
+          if (!myTeam) {
+            setTeam(null)
+            return
+          }
+
+          const isLeader =
+            (myTeam.leader?.email || myTeam.leader_email || '').toLowerCase().trim() === userEmail ||
+            Boolean(myTeam.isLeaderForThisTeam) ||
+            Boolean(myTeam.isLeader)
+
+          setTeam({
+            ...myTeam,
+            isLeader,
+            isLeaderForThisTeam: isLeader,
+          })
+        })
+      })
       .catch(() => {
         if (!cancelled) navigate('/auth')
-        throw new Error('redirect')
       })
-      .then(() => fetchMyTeams())
-      .then((data) => {
-        if (cancelled) return
-        const teams = data.teams || []
-        // The leader's team eligible for payment (including when re-submitting after rejection)
-        const locked = teams.find(
-          (t) =>
-            t.isLeaderForThisTeam &&
-            (t.status === 'locked' ||
-              t.status === 'rejected' ||
-              t.status === 'registered' ||
-              t.payment?.status === 'rejected' ||
-              t.payment?.status === 'submitted' ||
-              t.payment?.status === 'verified'),
-        ) || teams.find((t) => t.isLeaderForThisTeam)
-        setTeam(locked || null)
-      })
-      .catch(() => undefined)
       .finally(() => {
         if (!cancelled) setLoading(false)
       })
@@ -187,7 +212,7 @@ export default function Payment() {
     )
   }
 
-  // Not eligible (not a leader of a locked team)
+  // No team exists for user
   if (!team) {
     return (
       <div className={pageClass}>
@@ -197,11 +222,88 @@ export default function Payment() {
             <CornerBrackets />
             <div className="flex flex-col items-center text-center py-4">
               <h1 className="font-sans font-bold text-base sm:text-lg text-white leading-relaxed">
-                NO TEAM TO PAY FOR
+                NO SQUAD ENROLLED
               </h1>
               <p className="text-xs text-slate-400 mt-2 mb-5 leading-relaxed font-mono">
-                Payment opens after your team is locked with all members
-                accepted. Lock your roster from the dashboard to continue.
+                You are not currently enrolled in any squad. Create a squad or accept an invitation to proceed with registration payment.
+              </p>
+              <div className="w-full flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigate('/create-team')}
+                  className={secondaryBtnClass}
+                >
+                  Create or Join Team
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate('/dashboard')}
+                  className={secondaryBtnClass}
+                >
+                  Go to Dashboard
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Non-leader teammate visited payment page
+  if (!team.isLeaderForThisTeam && !team.isLeader) {
+    return (
+      <div className={pageClass}>
+        <div className="w-full max-w-[520px]">
+          <HomeLink />
+          <div className="bg-[#0e111a] border border-slate-800 rounded-lg p-4 sm:p-8 shadow-2xl relative">
+            <CornerBrackets />
+            <div className="flex flex-col items-center text-center py-4">
+              <h1 className="font-sans font-bold text-base sm:text-lg text-white leading-relaxed">
+                LEADER PAYMENT ONLY
+              </h1>
+              <p className="text-xs text-slate-400 mt-2 mb-5 leading-relaxed font-mono">
+                Only your squad leader (<strong className="text-tactical">{team.leader?.name || team.leader?.email || 'Leader'}</strong>) is authorized to submit or re-submit the payment UTR for squad "{team.name}".
+              </p>
+              <div className="w-full flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigate('/dashboard')}
+                  className={secondaryBtnClass}
+                >
+                  Return to Dashboard
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Roster not locked yet
+  const isRosterLocked =
+    team.status === 'locked' ||
+    team.status === 'rejected' ||
+    team.status === 'registered' ||
+    team.status === 'confirmed' ||
+    paymentStatus === 'rejected' ||
+    paymentStatus === 'submitted' ||
+    paymentStatus === 'verified'
+
+  if (!isRosterLocked) {
+    return (
+      <div className={pageClass}>
+        <div className="w-full max-w-[520px]">
+          <HomeLink />
+          <div className="bg-[#0e111a] border border-slate-800 rounded-lg p-4 sm:p-8 shadow-2xl relative">
+            <CornerBrackets />
+            <div className="flex flex-col items-center text-center py-4">
+              <h1 className="font-sans font-bold text-base sm:text-lg text-white leading-relaxed">
+                LOCK SQUAD ROSTER FIRST
+              </h1>
+              <p className="text-xs text-slate-400 mt-2 mb-5 leading-relaxed font-mono">
+                Payment opens after your squad roster is locked with all members accepted. Lock your roster from the dashboard to continue.
               </p>
               <div className="w-full flex flex-col gap-2">
                 <button
@@ -210,13 +312,6 @@ export default function Payment() {
                   className={secondaryBtnClass}
                 >
                   Go to Dashboard
-                </button>
-                <button
-                  type="button"
-                  onClick={() => navigate('/create-team')}
-                  className={secondaryBtnClass}
-                >
-                  Create or Join Team
                 </button>
               </div>
             </div>

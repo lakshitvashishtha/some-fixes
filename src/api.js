@@ -1147,16 +1147,48 @@ async function handleFallback(path, options, err) {
         throw new Error(`UTR "${cleanUtr}" has already been submitted by squad "${duplicateTeam.name}". Each squad registration requires a unique payment transaction.`)
       }
     }
-    const teams = getStoredTeams(currentUser).map((t) => ({
-      ...t,
-      payment: {
+    const targetTeamId = path.replace('/api/teams/', '').replace('/payment', '').split('/')[0]
+    const teams = getStoredTeams(currentUser).map((t) => {
+      const match = !targetTeamId || targetTeamId === 'team' || t.id === targetTeamId
+      if (!match) return t
+      return {
+        ...t,
+        status: t.status === 'rejected' ? 'locked' : t.status,
+        payment: {
+          ...(t.payment || {}),
+          status: 'submitted',
+          utr: cleanUtr || '428901238910',
+          amount: t.payment?.amount || 800,
+          submittedAt: new Date().toISOString(),
+          notes: null,
+        },
+      }
+    })
+    saveTeams(teams)
+
+    const allTeams = getAllRegisteredTeams()
+    const targetTeam = allTeams.find((t) => t.id === targetTeamId) || allTeams.find(t => teams.some(mt => mt.id === t.id))
+    if (targetTeam) {
+      targetTeam.payment = {
+        ...(targetTeam.payment || {}),
         status: 'submitted',
         utr: cleanUtr || '428901238910',
+        amount: targetTeam.payment?.amount || 800,
         submittedAt: new Date().toISOString(),
-      },
-    }))
-    saveTeams(teams)
-    return { success: true, payment: teams[0].payment }
+        notes: null,
+      }
+      if (targetTeam.status === 'rejected') {
+        targetTeam.status = 'locked'
+      }
+      saveRegisteredTeams(allTeams)
+    }
+
+    if (typeof window !== 'undefined' && window.dispatchEvent) {
+      window.dispatchEvent(new CustomEvent('codefiesta_teams_updated'))
+      window.dispatchEvent(new CustomEvent('hackathon:state-updated'))
+    }
+
+    return { success: true, payment: (targetTeam || teams[0])?.payment }
   }
 
   // POST /api/teams/invite/:token/check-email
@@ -2590,8 +2622,10 @@ async function request(path, options = {}) {
   if (origin) {
     try {
       const storedKey = getStoredAdminKey()
+      const storedUser = getStoredUser()
       const headers = {
         'Content-Type': 'application/json',
+        ...(storedUser?.email ? { 'x-user-email': storedUser.email } : {}),
         ...(storedKey ? { 'x-vault-passkey': storedKey, 'x-ops-vault-key': storedKey } : {}),
         ...(options.headers || {}),
       }
