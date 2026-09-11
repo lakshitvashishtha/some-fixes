@@ -76,6 +76,257 @@ function sharedStatePlugin() {
             return;
           }
         }
+
+        // POST /api/auth/login
+        if (req.url === '/api/auth/login') {
+          if (req.method === 'POST') {
+            let body = '';
+            req.on('data', (chunk) => { body += chunk; });
+            req.on('end', () => {
+              try {
+                const incoming = JSON.parse(body || '{}');
+                const cleanEmail = String(incoming.email || '').trim().toLowerCase();
+                const password = String(incoming.password || '').trim();
+
+                if (!cleanEmail) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'Email address is required.' }));
+                  return;
+                }
+                if (!password) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'Password is required.' }));
+                  return;
+                }
+
+                const db = readDb();
+                let user = (db.users || []).find(
+                  (u) => (u.email || '').toLowerCase() === cleanEmail
+                );
+
+                // If user not in db.users, check if registered as leader or teammate in any team
+                if (!user) {
+                  for (const t of db.teams || []) {
+                    if (
+                      (t.leader_email || '').toLowerCase() === cleanEmail ||
+                      (t.leaderEmail || '').toLowerCase() === cleanEmail ||
+                      (t.leader?.email || '').toLowerCase() === cleanEmail
+                    ) {
+                      user = {
+                        id: t.leader?.id || ('usr_' + t.id),
+                        email: cleanEmail,
+                        firstName: t.leader?.firstName || t.leader?.name?.split(' ')[0] || '',
+                        lastName: t.leader?.lastName || t.leader?.name?.split(' ').slice(1).join(' ') || '',
+                        name: t.leader?.name || `${t.leader?.firstName || ''} ${t.leader?.lastName || ''}`.trim() || 'Squad Leader',
+                        phone: t.leader?.phone || '',
+                        college: t.leader?.college || '',
+                        rollNumber: t.leader?.rollNumber || '',
+                        course: t.leader?.course || 'CSE',
+                        year: t.leader?.year || '1st',
+                        gender: t.leader?.gender || 'male',
+                        password: t.leader?.password || password,
+                        registeredAt: t.createdAt || new Date().toISOString(),
+                      };
+                      break;
+                    }
+                    const member = (t.members || []).find((m) => (m.email || '').toLowerCase() === cleanEmail);
+                    if (member) {
+                      user = {
+                        id: member.id || ('usr_' + t.id),
+                        email: cleanEmail,
+                        firstName: member.firstName || member.name?.split(' ')[0] || '',
+                        lastName: member.lastName || member.name?.split(' ').slice(1).join(' ') || '',
+                        name: member.name || `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Squad Member',
+                        phone: member.phone || '',
+                        college: member.college || '',
+                        rollNumber: member.rollNumber || '',
+                        course: member.course || 'CSE',
+                        year: member.year || '1st',
+                        gender: member.gender || 'male',
+                        password: member.password || password,
+                        registeredAt: new Date().toISOString(),
+                      };
+                      break;
+                    }
+                  }
+                }
+
+                if (!user) {
+                  res.statusCode = 401;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'No account registered with this email. Please check credentials or register first.' }));
+                  return;
+                }
+
+                // Strictly verify password if one was set
+                if (user.password && user.password !== password) {
+                  res.statusCode = 401;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'Invalid password. Please check your credentials.' }));
+                  return;
+                }
+
+                if (!user.password) {
+                  user.password = password;
+                }
+
+                // Ensure user is recorded in db.users
+                db.users = (db.users || []).filter((u) => (u.email || '').toLowerCase() !== cleanEmail);
+                db.users.push(user);
+                writeDb(db);
+
+                const safeUser = { ...user };
+                delete safeUser.password;
+                res.setHeader('Content-Type', 'application/json');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                res.end(JSON.stringify({ success: true, user: safeUser }));
+              } catch (err) {
+                res.statusCode = 400;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: err.message }));
+              }
+            });
+            return;
+          }
+        }
+
+        // POST /api/auth/register
+        if (req.url === '/api/auth/register') {
+          if (req.method === 'POST') {
+            let body = '';
+            req.on('data', (chunk) => { body += chunk; });
+            req.on('end', () => {
+              try {
+                const incoming = JSON.parse(body || '{}');
+                const cleanEmail = String(incoming.email || '').trim().toLowerCase();
+                if (!cleanEmail) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'Email address is required.' }));
+                  return;
+                }
+
+                const db = readDb();
+                const existing = (db.users || []).find((u) => (u.email || '').toLowerCase() === cleanEmail);
+                if (existing) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'Email is already registered.' }));
+                  return;
+                }
+
+                const newUser = {
+                  id: 'usr_' + Math.random().toString(36).slice(2, 11),
+                  email: cleanEmail,
+                  password: String(incoming.password || ''),
+                  firstName: String(incoming.firstName || ''),
+                  lastName: String(incoming.lastName || ''),
+                  name: incoming.name || `${incoming.firstName || ''} ${incoming.lastName || ''}`.trim() || 'Hacker',
+                  phone: String(incoming.phone || ''),
+                  college: String(incoming.college || ''),
+                  rollNumber: String(incoming.rollNumber || ''),
+                  course: String(incoming.course || 'CSE'),
+                  year: String(incoming.year || '1st'),
+                  gender: String(incoming.gender || 'male'),
+                  registeredAt: new Date().toISOString(),
+                };
+
+                db.users = [...(db.users || []), newUser];
+                writeDb(db);
+
+                const safeUser = { ...newUser };
+                delete safeUser.password;
+                res.setHeader('Content-Type', 'application/json');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                res.end(JSON.stringify({ success: true, user: safeUser }));
+              } catch (err) {
+                res.statusCode = 400;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: err.message }));
+              }
+            });
+            return;
+          }
+        }
+
+        // POST /api/auth/check-email
+        if (req.url === '/api/auth/check-email') {
+          if (req.method === 'POST') {
+            let body = '';
+            req.on('data', (chunk) => { body += chunk; });
+            req.on('end', () => {
+              try {
+                const incoming = JSON.parse(body || '{}');
+                const cleanEmail = String(incoming.email || '').trim().toLowerCase();
+                const db = readDb();
+                const exists = (db.users || []).some((u) => (u.email || '').toLowerCase() === cleanEmail) ||
+                  (db.teams || []).some((t) =>
+                    (t.leader_email || '').toLowerCase() === cleanEmail ||
+                    (t.leaderEmail || '').toLowerCase() === cleanEmail ||
+                    (t.leader?.email || '').toLowerCase() === cleanEmail ||
+                    (t.members || []).some((m) => (m.email || '').toLowerCase() === cleanEmail)
+                  );
+                res.setHeader('Content-Type', 'application/json');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                res.end(JSON.stringify({ exists }));
+              } catch (err) {
+                res.statusCode = 400;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: err.message }));
+              }
+            });
+            return;
+          }
+        }
+
+        // GET /api/auth/me
+        if (req.url === '/api/auth/me' || req.url?.startsWith('/api/auth/me?')) {
+          const userEmail = String(req.headers['x-user-email'] || '').trim().toLowerCase();
+          const db = readDb();
+          let user = userEmail ? (db.users || []).find((u) => (u.email || '').toLowerCase() === userEmail) : null;
+          if (!user && userEmail) {
+            for (const t of db.teams || []) {
+              if (
+                (t.leader_email || '').toLowerCase() === userEmail ||
+                (t.leaderEmail || '').toLowerCase() === userEmail ||
+                (t.leader?.email || '').toLowerCase() === userEmail
+              ) {
+                user = {
+                  id: t.leader?.id || ('usr_' + t.id),
+                  email: userEmail,
+                  name: t.leader?.name || `${t.leader?.firstName || ''} ${t.leader?.lastName || ''}`.trim() || 'Leader',
+                  phone: t.leader?.phone || '',
+                  college: t.leader?.college || '',
+                  rollNumber: t.leader?.rollNumber || '',
+                  course: t.leader?.course || 'CSE',
+                  year: t.leader?.year || '1st',
+                  gender: t.leader?.gender || 'male',
+                };
+                break;
+              }
+            }
+          }
+          res.setHeader('Content-Type', 'application/json');
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          if (user) {
+            const safe = { ...user };
+            delete safe.password;
+            res.end(JSON.stringify({ success: true, user: safe }));
+          } else {
+            res.end(JSON.stringify({ success: false, user: null }));
+          }
+          return;
+        }
+
+        // POST /api/auth/logout
+        if (req.url === '/api/auth/logout') {
+          res.setHeader('Content-Type', 'application/json');
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.end(JSON.stringify({ success: true }));
+          return;
+        }
         if (req.url === '/api/ops/registrations' || req.url?.startsWith('/api/ops/registrations?')) {
           if (req.method === 'GET') {
             const db = readDb();
@@ -464,6 +715,28 @@ function sharedStatePlugin() {
                   status: 'registered',
                   createdAt: new Date().toISOString(),
                 };
+
+                // Also save leader as user in db.users
+                const leaderEmail = String(incoming.leader?.email || incoming.leader_email || '').trim().toLowerCase();
+                if (leaderEmail) {
+                  const leaderUser = {
+                    id: incoming.leader?.id || ('usr_' + newTeam.id),
+                    email: leaderEmail,
+                    firstName: incoming.leader?.firstName || '',
+                    lastName: incoming.leader?.lastName || '',
+                    name: incoming.leader?.name || `${incoming.leader?.firstName || ''} ${incoming.leader?.lastName || ''}`.trim() || 'Leader',
+                    phone: incoming.leader?.phone || '',
+                    college: incoming.leader?.college || '',
+                    rollNumber: incoming.leader?.rollNumber || '',
+                    course: incoming.leader?.course || 'CSE',
+                    year: incoming.leader?.year || '1st',
+                    gender: incoming.leader?.gender || 'male',
+                    password: incoming.leader?.password || incoming.password || '',
+                    registeredAt: new Date().toISOString(),
+                  };
+                  db.users = (db.users || []).filter((u) => (u.email || '').toLowerCase() !== leaderEmail);
+                  db.users.push(leaderUser);
+                }
 
                 db.teams = [newTeam, ...allTeams];
                 writeDb(db);

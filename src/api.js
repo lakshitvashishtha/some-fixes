@@ -849,7 +849,11 @@ async function handleFallback(path, options, err) {
     if (!matchedUser) {
       const allTeams = getAllRegisteredTeams()
       for (const t of allTeams) {
-        if (t.leader?.email && t.leader.email.toLowerCase() === loginEmail) {
+        if (
+          (t.leader?.email && t.leader.email.toLowerCase() === loginEmail) ||
+          (t.leader_email && t.leader_email.toLowerCase() === loginEmail) ||
+          (t.leaderEmail && t.leaderEmail.toLowerCase() === loginEmail)
+        ) {
           if (t.leader.password && t.leader.password !== loginPassword) {
             throw new Error('Invalid password. Please check your credentials.')
           }
@@ -2786,7 +2790,14 @@ async function request(path, options = {}) {
           }
           return data
         } else if (res.status === 400 || res.status === 401 || res.status === 403 || res.status === 429) {
-          // Intentional rejection from backend (invalid password, bad email, lockout, etc.)
+          // If login or me endpoint failed with 401/404 on server, check if user exists in local/shared store
+          if ((path === '/api/auth/login' || path === '/api/auth/me') && (res.status === 401 || res.status === 404)) {
+            try {
+              return await handleFallback(path, options)
+            } catch (fallbackErr) {
+              throw new Error(data?.error || fallbackErr.message || `Request failed with status ${res.status}`)
+            }
+          }
           throw new Error(data?.error || `Request failed with status ${res.status}`)
         }
       }

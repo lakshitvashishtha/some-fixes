@@ -762,7 +762,11 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     // If user not in store.users, check if registered as leader or teammate in any team
     if (!user) {
       for (const t of store.teams || []) {
-        if ((t.leader_email || '').toLowerCase() === cleanEmail || (t.leader?.email || '').toLowerCase() === cleanEmail) {
+        if (
+          (t.leader_email || '').toLowerCase() === cleanEmail ||
+          (t.leaderEmail || '').toLowerCase() === cleanEmail ||
+          (t.leader?.email || '').toLowerCase() === cleanEmail
+        ) {
           user = {
             id: t.leader?.id || ('usr_' + t.id),
             email: cleanEmail,
@@ -1001,7 +1005,23 @@ app.post('/api/teams/create', apiLimiter, async (req, res) => {
       }
     }
 
-    await saveFullStore({ teams: [newTeam] }, false)
+    const leaderUser = {
+      id: 'usr_' + newTeam.id,
+      email: leaderEmail,
+      firstName: leaderMember.firstName || '',
+      lastName: leaderMember.lastName || '',
+      name: leaderName,
+      phone: leaderMember.phone || '',
+      college: leaderCollege,
+      rollNumber: leaderMember.rollNumber || '',
+      course: leaderMember.course || 'CSE',
+      year: leaderMember.year || '1st',
+      gender: leaderMember.gender || 'male',
+      password: leader.password || body.password || '',
+      registeredAt: new Date().toISOString()
+    }
+
+    await saveFullStore({ teams: [newTeam], users: [leaderUser] }, false)
     res.json({ success: true, team: newTeam })
   } catch (err) {
     safeErrorResponse(res, err)

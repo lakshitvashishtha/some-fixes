@@ -90,14 +90,14 @@ export default function Footer() {
               
               <div className="flex flex-col gap-2 font-mono text-xs">
                 <a
-                  href="https://www.instagram.com/_gitjaipur"
+                  href="https://www.instagram.com/codefiesta_git"
                   target="_blank"
                   rel="noreferrer"
                   className="flex items-center gap-2.5 bg-[#0b0e17] hover:bg-[#121726] border border-slate-800 hover:border-pink-500/50 px-3 py-2 rounded-lg text-slate-300 hover:text-white transition-all group"
                 >
                   <span className="text-pink-400 group-hover:scale-110 transition-transform">📷</span>
                   <span>Instagram</span>
-                  <span className="ml-auto text-[10px] text-slate-600 group-hover:text-pink-400">@_gitjaipur</span>
+                  <span className="ml-auto text-[10px] text-slate-600 group-hover:text-pink-400">@codefiesta_git</span>
                 </a>
 
                 <a
