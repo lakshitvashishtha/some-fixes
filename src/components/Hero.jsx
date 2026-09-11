@@ -176,10 +176,12 @@ export default function Hero({ playArcadeBeep }) {
         <div className="mt-6 sm:mt-8 relative z-20 flex flex-col items-center">
           <a
             className="arcade-begin-btn inline-block px-6 sm:px-8 lg:px-10 py-2.5 sm:py-3 lg:py-3.5 rounded-lg text-slate-900 font-pixel text-base sm:text-lg lg:text-xl font-black tracking-widest uppercase transition transform active:scale-95 text-center cursor-pointer"
-            href="/"
+            href={HTS_REGISTER_URL || '/auth'}
             onClick={(e) => {
+              if (HTS_REGISTER_URL) return
               e.preventDefault()
-              window.location.href = window.location.pathname
+              if (playArcadeBeep) playArcadeBeep()
+              navigate('/auth')
             }}
           >
             REGISTER NOW
