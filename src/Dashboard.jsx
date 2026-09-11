@@ -1903,8 +1903,38 @@ function TeamCard({ team, user, assignedTable, setTeams, onReload }) {
       setActionMsg('Roster modifications are closed. Editing teammates was only allowed until 30th September.')
       return
     }
+    const mem = (team.members || []).find(
+      (m) => (m.email || '').toLowerCase() === (email || '').toLowerCase()
+    )
+    const memberName = mem?.name || mem?.firstName || email
+    if (
+      !window.confirm(
+        `Are you sure you want to remove teammate "${memberName}" from squad "${team.name}"?`
+      )
+    ) {
+      return
+    }
+
     try {
+      // Optimistically remove from state
+      setTeams((prev) =>
+        prev.map((t) => {
+          if (t.id !== team.id) return t
+          const updatedMembers = (t.members || []).filter(
+            (m) => (m.email || '').toLowerCase() !== (email || '').toLowerCase()
+          )
+          return {
+            ...t,
+            members: updatedMembers,
+            acceptedCount: updatedMembers.filter(
+              (m) => (m.status === 'accepted' || m.status === 'confirmed') && !m.earlyExit
+            ).length,
+          }
+        })
+      )
       await removeMemberApi(team.id, email)
+      setActionMsg(`✓ Teammate "${memberName}" removed successfully.`)
+      setTimeout(() => setActionMsg(''), 4000)
       onReload()
     } catch (err) {
       setActionMsg(err.message || 'Could not remove member.')

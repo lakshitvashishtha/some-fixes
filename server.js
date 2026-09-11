@@ -344,6 +344,16 @@ async function saveFullStore(incoming) {
         )
 
         if (Array.isArray(t.members)) {
+          const currentMemberEmails = t.members.map(m => (m.email || '').toLowerCase().trim()).filter(Boolean)
+          if (currentMemberEmails.length > 0) {
+            await pool.query(
+              `DELETE FROM team_members WHERE team_id = ? AND LOWER(email) NOT IN (?)`,
+              [t.id, currentMemberEmails]
+            )
+          } else {
+            await pool.query(`DELETE FROM team_members WHERE team_id = ?`, [t.id])
+          }
+
           for (const m of t.members) {
             await pool.query(
               `INSERT INTO team_members (id, team_id, email, name, college, role, status, invite_code, early_exit)
@@ -627,28 +637,70 @@ app.post('/api/ops/revert-payment', async (req, res) => {
   }
 })
 
+// Squad Teammate Removal (Team Leader)
+app.delete('/api/teams/:teamId/members/:email', async (req, res) => {
+  try {
+    const { teamId, email } = req.params
+    if (!teamId || !email) {
+      return res.status(400).json({ error: 'teamId and email are required' })
+    }
+    const cleanEmail = decodeURIComponent(email).toLowerCase().trim()
+
+    const store = await getFullStore()
+    const team = store.teams.find(t => t.id === teamId || t.code === teamId)
+    if (!team) return res.status(404).json({ error: 'Team not found' })
+
+    team.members = (team.members || []).filter(m => (m.email || '').toLowerCase().trim() !== cleanEmail)
+    team.invites = (team.invites || []).filter(i => (i.email || '').toLowerCase().trim() !== cleanEmail)
+    team.size = Math.max(1, team.members.length)
+    team.acceptedCount = (team.members || []).filter(m => (m.status === 'accepted' || m.status === 'confirmed') && !m.earlyExit).length
+
+    if (useTiDB && pool) {
+      await pool.query('DELETE FROM team_members WHERE team_id = ? AND LOWER(email) = ?', [team.id, cleanEmail])
+      await pool.query('UPDATE teams SET size = ? WHERE id = ?', [team.size, team.id])
+    }
+
+    await saveFullStore({ teams: store.teams })
+    res.json({ success: true, team })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // Ops: Remove Attendee / Early Exit
 app.post('/api/ops/remove-attendee', async (req, res) => {
   try {
-    const { passkey, teamId, email, markEarlyExitOnly } = req.body || {}
+    const { passkey, teamId, email, markEarlyExitOnly, earlyExit } = req.body || {}
     if (passkey !== ADMIN_VAULT_KEY) {
       return res.status(403).json({ error: 'Unauthorized' })
     }
 
+    const cleanEmail = (email || '').toLowerCase().trim()
     const store = await getFullStore()
-    const team = store.teams.find(t => t.id === teamId)
+    const team = store.teams.find(t => t.id === teamId || t.code === teamId)
     if (!team) return res.status(404).json({ error: 'Team not found' })
 
-    const member = (team.members || []).find(m => m.email.toLowerCase() === email.toLowerCase())
+    const member = (team.members || []).find(m => (m.email || '').toLowerCase().trim() === cleanEmail)
     if (!member) return res.status(404).json({ error: 'Member not found in team' })
 
-    if (markEarlyExitOnly) {
+    const isEarlyExit = earlyExit !== undefined ? earlyExit !== false : markEarlyExitOnly !== false
+    if (isEarlyExit) {
       member.earlyExit = true
       member.earlyExitAt = new Date().toISOString()
+      if (useTiDB && pool) {
+        await pool.query('UPDATE team_members SET early_exit = true, early_exit_at = NOW() WHERE team_id = ? AND LOWER(email) = ?', [team.id, cleanEmail])
+      }
     } else {
-      team.members = team.members.filter(m => m.email.toLowerCase() !== email.toLowerCase())
+      team.members = (team.members || []).filter(m => (m.email || '').toLowerCase().trim() !== cleanEmail)
+      team.invites = (team.invites || []).filter(i => (i.email || '').toLowerCase().trim() !== cleanEmail)
+      team.size = Math.max(1, team.members.length)
+      if (useTiDB && pool) {
+        await pool.query('DELETE FROM team_members WHERE team_id = ? AND LOWER(email) = ?', [team.id, cleanEmail])
+        await pool.query('UPDATE teams SET size = ? WHERE id = ?', [team.size, team.id])
+      }
     }
 
+    team.acceptedCount = (team.members || []).filter(m => (m.status === 'accepted' || m.status === 'confirmed') && !m.earlyExit).length
     await saveFullStore({ teams: store.teams })
     res.json({ success: true, team })
   } catch (err) {
@@ -663,16 +715,21 @@ app.post('/api/ops/reinstate-attendee', async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized' })
     }
 
+    const cleanEmail = (email || '').toLowerCase().trim()
     const store = await getFullStore()
-    const team = store.teams.find(t => t.id === teamId)
+    const team = store.teams.find(t => t.id === teamId || t.code === teamId)
     if (!team) return res.status(404).json({ error: 'Team not found' })
 
-    const member = (team.members || []).find(m => m.email.toLowerCase() === email.toLowerCase())
+    const member = (team.members || []).find(m => (m.email || '').toLowerCase().trim() === cleanEmail)
     if (member) {
       member.earlyExit = false
       member.earlyExitAt = null
+      if (useTiDB && pool) {
+        await pool.query('UPDATE team_members SET early_exit = false, early_exit_at = NULL WHERE team_id = ? AND LOWER(email) = ?', [team.id, cleanEmail])
+      }
     }
 
+    team.acceptedCount = (team.members || []).filter(m => (m.status === 'accepted' || m.status === 'confirmed') && !m.earlyExit).length
     await saveFullStore({ teams: store.teams })
     res.json({ success: true, team })
   } catch (err) {

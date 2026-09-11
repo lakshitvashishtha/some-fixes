@@ -141,6 +141,35 @@ function sharedStatePlugin() {
             return;
           }
         }
+
+        // Handle direct DELETE /api/teams/:id/members/:email
+        if (req.method === 'DELETE' && req.url?.startsWith('/api/teams/') && req.url?.includes('/members/')) {
+          const parts = req.url.split('?')[0].replace('/api/teams/', '').split('/members/');
+          const teamId = decodeURIComponent(parts[0] || '').trim();
+          const emailToDelete = decodeURIComponent(parts[1] || '').toLowerCase().trim();
+
+          const current = readDb();
+          const targetTeam = (current.teams || []).find((t) => t.id === teamId || t.code === teamId);
+          if (targetTeam) {
+            targetTeam.members = (targetTeam.members || []).filter(
+              (m) => (m.email || '').toLowerCase().trim() !== emailToDelete
+            );
+            targetTeam.invites = (targetTeam.invites || []).filter(
+              (i) => (i.email || '').toLowerCase().trim() !== emailToDelete
+            );
+            targetTeam.size = Math.max(1, targetTeam.members.length);
+            targetTeam.acceptedCount = (targetTeam.members || []).filter(
+              (m) => (m.status === 'accepted' || m.status === 'confirmed') && !m.earlyExit
+            ).length;
+            writeDb(current);
+          }
+
+          res.setHeader('Content-Type', 'application/json');
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.end(JSON.stringify({ success: true, team: targetTeam || null }));
+          return;
+        }
+
         next();
       });
     },

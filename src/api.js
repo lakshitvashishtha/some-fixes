@@ -163,15 +163,17 @@ export async function syncWithSharedStore(forceOverwrite = false) {
             map.set(lt.id, lt)
           } else {
             const serverTeam = map.get(lt.id)
-            const mergedMembers = mergeMembers(serverTeam.members, lt.members)
-            const acceptedCount = mergedMembers.filter((m) => m.status === 'accepted').length
+            const teamMembers = Array.isArray(serverTeam.members) ? serverTeam.members : (lt.members || [])
+            const acceptedCount = teamMembers.filter(
+              (m) => (m.status === 'accepted' || m.status === 'confirmed') && !m.earlyExit
+            ).length
             const assignedTable = (opsState?.tableAssignments?.[lt.id]) || serverTeam.tableNumber || lt.tableNumber || null
             map.set(lt.id, {
               ...lt,
               ...serverTeam,
               tableNumber: assignedTable,
-              members: mergedMembers,
-              acceptedCount: Math.max(serverTeam.acceptedCount || 0, lt.acceptedCount || 0, acceptedCount),
+              members: teamMembers,
+              acceptedCount: serverTeam.acceptedCount !== undefined ? serverTeam.acceptedCount : acceptedCount,
               payment: { ...(lt.payment || {}), ...(serverTeam.payment || {}) },
             })
           }
@@ -601,13 +603,15 @@ function saveTeams(teams, currentUser) {
     for (const t of teams) {
       const existing = teamMap.get(t.id)
       if (existing) {
-        const mergedMembers = mergeMembers(t.members, existing.members)
-        const acceptedCount = mergedMembers.filter((m) => m.status === 'accepted').length
+        const membersToSave = Array.isArray(t.members) ? t.members : existing.members
+        const acceptedCount = (membersToSave || []).filter(
+          (m) => (m.status === 'accepted' || m.status === 'confirmed') && !m.earlyExit
+        ).length
         teamMap.set(t.id, {
           ...existing,
           ...t,
-          members: mergedMembers,
-          acceptedCount: Math.max(existing.acceptedCount || 0, t.acceptedCount || 0, acceptedCount),
+          members: membersToSave,
+          acceptedCount: t.acceptedCount !== undefined ? t.acceptedCount : acceptedCount,
           payment: { ...(existing.payment || {}), ...(t.payment || {}) },
         })
       } else {
@@ -618,7 +622,7 @@ function saveTeams(teams, currentUser) {
   } catch {}
 }
 
-function handleFallback(path, options, err) {
+async function handleFallback(path, options, err) {
   const method = (options.method || 'GET').toUpperCase()
   const body = options.body ? JSON.parse(options.body) : {}
   const currentUser = getStoredUser()
@@ -1392,20 +1396,73 @@ function handleFallback(path, options, err) {
       throw new Error('Roster modifications are closed. Editing teammates was only allowed until 30th September.')
     }
     const parts = path.replace('/api/teams/', '').split('/members/')
-    const teamId = parts[0]
-    const emailToDelete = decodeURIComponent(parts[1] || '').toLowerCase()
-    const teams = getStoredTeams(currentUser).map((t) => {
-      if (t.id === teamId || !teamId) {
+    const teamId = decodeURIComponent(parts[0] || '').trim()
+    const emailToDelete = decodeURIComponent(parts[1] || '').toLowerCase().trim()
+
+    // 1. Authoritatively update all registered teams
+    const allTeams = getAllRegisteredTeams().map((t) => {
+      if (t.id === teamId || t.code === teamId || !teamId) {
+        const remainingMembers = (t.members || []).filter(
+          (m) => (m.email || '').toLowerCase().trim() !== emailToDelete
+        )
+        const remainingInvites = (t.invites || []).filter(
+          (i) => (i.email || '').toLowerCase().trim() !== emailToDelete
+        )
+        const acceptedCount = remainingMembers.filter(
+          (m) => (m.status === 'accepted' || m.status === 'confirmed') && !m.earlyExit
+        ).length
         return {
           ...t,
-          members: (t.members || []).filter((m) => m.email?.toLowerCase() !== emailToDelete),
-          invites: (t.invites || []).filter((i) => i.email?.toLowerCase() !== emailToDelete),
+          members: remainingMembers,
+          invites: remainingInvites,
+          acceptedCount,
+          size: Math.max(1, remainingMembers.length),
         }
       }
       return t
     })
-    saveTeams(teams, currentUser)
-    return { success: true }
+    saveRegisteredTeams(allTeams)
+
+    // 2. Clean up local browser caches
+    try {
+      localStorage.setItem('cf_teams', JSON.stringify(allTeams))
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i)
+        if (k && k.startsWith('cf_user_teams_')) {
+          try {
+            const ut = JSON.parse(localStorage.getItem(k) || '[]')
+            if (Array.isArray(ut)) {
+              const updatedUt = ut.map((t) => {
+                if (t.id === teamId || t.code === teamId || !teamId) {
+                  const rem = (t.members || []).filter(
+                    (m) => (m.email || '').toLowerCase().trim() !== emailToDelete
+                  )
+                  return {
+                    ...t,
+                    members: rem,
+                    acceptedCount: rem.filter((m) => (m.status === 'accepted' || m.status === 'confirmed') && !m.earlyExit).length,
+                    size: Math.max(1, rem.length),
+                  }
+                }
+                return t
+              })
+              localStorage.setItem(k, JSON.stringify(updatedUt))
+            }
+          } catch {}
+        }
+      }
+    } catch {}
+
+    // 3. Persist to shared database store immediately
+    await pushToSharedStore({ teams: allTeams, wipeTeams: true })
+
+    // 4. Dispatch event for instant UI update across tabs
+    if (typeof window !== 'undefined' && window.dispatchEvent) {
+      window.dispatchEvent(new CustomEvent('codefiesta_teams_updated', { detail: { teams: allTeams } }))
+    }
+
+    const updatedTeam = allTeams.find((t) => t.id === teamId || t.code === teamId)
+    return { success: true, team: updatedTeam }
   }
 
   // POST /api/teams/check-name
@@ -1893,17 +1950,18 @@ function handleFallback(path, options, err) {
     const isEarlyExit = body.earlyExit !== false
 
     const allTeams = getAllRegisteredTeams()
-    const targetTeam = allTeams.find((t) => t.id === teamId)
+    const targetTeam = allTeams.find((t) => t.id === teamId || t.code === teamId)
     if (!targetTeam) throw new Error('Squad not found')
 
-    const member = (targetTeam.members || []).find((m) => m.email && m.email.toLowerCase() === email)
+    const member = (targetTeam.members || []).find((m) => (m.email || '').toLowerCase().trim() === email)
     if (member) {
       if (isEarlyExit) {
         member.earlyExit = true
         member.earlyExitAt = new Date().toISOString()
       } else {
         // Complete drop from roster
-        targetTeam.members = (targetTeam.members || []).filter((m) => m.email?.toLowerCase() !== email)
+        targetTeam.members = (targetTeam.members || []).filter((m) => (m.email || '').toLowerCase().trim() !== email)
+        targetTeam.invites = (targetTeam.invites || []).filter((i) => (i.email || '').toLowerCase().trim() !== email)
         targetTeam.size = Math.max(1, targetTeam.members.length)
       }
       targetTeam.acceptedCount = (targetTeam.members || []).filter(
@@ -1912,8 +1970,28 @@ function handleFallback(path, options, err) {
     }
 
     saveRegisteredTeams(allTeams)
-    if (targetTeam.leader?.email) saveTeams([targetTeam], { email: targetTeam.leader.email })
-    pushToSharedStore({ teams: allTeams })
+    try {
+      localStorage.setItem('cf_teams', JSON.stringify(allTeams))
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i)
+        if (k && k.startsWith('cf_user_teams_')) {
+          try {
+            const ut = JSON.parse(localStorage.getItem(k) || '[]')
+            if (Array.isArray(ut)) {
+              const updatedUt = ut.map(t => {
+                if (t.id === teamId || t.code === teamId) {
+                  return { ...targetTeam }
+                }
+                return t
+              })
+              localStorage.setItem(k, JSON.stringify(updatedUt))
+            }
+          } catch {}
+        }
+      }
+    } catch {}
+
+    await pushToSharedStore({ teams: allTeams, wipeTeams: true })
     if (typeof window !== 'undefined' && window.dispatchEvent) {
       window.dispatchEvent(new CustomEvent('codefiesta_teams_updated', { detail: { teams: allTeams } }))
     }
@@ -1928,10 +2006,10 @@ function handleFallback(path, options, err) {
     const email = (body.email || '').toLowerCase().trim()
 
     const allTeams = getAllRegisteredTeams()
-    const targetTeam = allTeams.find((t) => t.id === teamId)
+    const targetTeam = allTeams.find((t) => t.id === teamId || t.code === teamId)
     if (!targetTeam) throw new Error('Squad not found')
 
-    const member = (targetTeam.members || []).find((m) => m.email && m.email.toLowerCase() === email)
+    const member = (targetTeam.members || []).find((m) => (m.email || '').toLowerCase().trim() === email)
     if (member) {
       member.earlyExit = false
       delete member.earlyExitAt
@@ -1941,8 +2019,10 @@ function handleFallback(path, options, err) {
     }
 
     saveRegisteredTeams(allTeams)
-    if (targetTeam.leader?.email) saveTeams([targetTeam], { email: targetTeam.leader.email })
-    pushToSharedStore({ teams: allTeams })
+    try {
+      localStorage.setItem('cf_teams', JSON.stringify(allTeams))
+    } catch {}
+    await pushToSharedStore({ teams: allTeams, wipeTeams: true })
     if (typeof window !== 'undefined' && window.dispatchEvent) {
       window.dispatchEvent(new CustomEvent('codefiesta_teams_updated', { detail: { teams: allTeams } }))
     }
