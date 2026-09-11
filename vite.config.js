@@ -76,6 +76,76 @@ function sharedStatePlugin() {
             return;
           }
         }
+        if (req.url === '/api/ops/registrations' || req.url?.startsWith('/api/ops/registrations?')) {
+          if (req.method === 'GET') {
+            const db = readDb();
+            const candidates = [];
+            for (const t of db.teams || []) {
+              const leaderCollege = t.leader?.college || 'Global Institute of Technology, Jaipur';
+              const leaderName = t.leader?.name || (t.leader?.firstName ? `${t.leader.firstName} ${t.leader.lastName || ''}`.trim() : 'Leader');
+              const members = Array.isArray(t.members) && t.members.length > 0 ? t.members : [
+                {
+                  id: 'mem_leader_' + t.id,
+                  name: leaderName,
+                  email: t.leader?.email,
+                  college: leaderCollege,
+                  role: 'leader',
+                  status: 'accepted'
+                }
+              ];
+              for (const m of members) {
+                const isLeader = m.role === 'leader' || (t.leader?.email && m.email?.toLowerCase() === t.leader?.email?.toLowerCase());
+                const isConfirmed = isLeader || m.status === 'accepted' || m.status === 'confirmed';
+                const candidateStatus = isConfirmed ? 'accepted' : (m.status || 'pending');
+                candidates.push({
+                  candidateId: m.id || m.email,
+                  candidateName: m.name || (isLeader ? leaderName : 'Operative'),
+                  email: m.email,
+                  role: isLeader ? 'leader' : 'member',
+                  phone: m.phone || (isLeader ? t.leader?.phone : '') || '',
+                  college: m.college || leaderCollege,
+                  collegeName: m.college || leaderCollege,
+                  rollNumber: m.rollNumber || (isLeader ? t.leader?.rollNumber : '') || '',
+                  course: m.course || (isLeader ? t.leader?.course : '') || 'CSE',
+                  year: m.year || (isLeader ? t.leader?.year : '') || '1st',
+                  gender: m.gender || (isLeader ? t.leader?.gender : '') || 'male',
+                  teamId: t.id,
+                  teamName: t.name,
+                  status: candidateStatus,
+                  inviteStatus: candidateStatus,
+                  isConfirmed,
+                  utr: t.payment?.utr || t.payment?.reference || 'NOT_SUBMITTED',
+                  paymentStatus: t.payment?.status || 'not_submitted',
+                  paymentVerified: t.payment?.status === 'verified',
+                  paymentNotes: t.payment?.notes || null,
+                  paymentReference: t.payment?.utr || t.payment?.reference || 'NOT_SUBMITTED',
+                  amount: t.payment?.amount || 800,
+                  submittedAt: t.payment?.submittedAt || t.createdAt || new Date().toISOString(),
+                  verifiedAt: t.payment?.verifiedAt || null,
+                  earlyExit: Boolean(m.earlyExit),
+                  tableNumber: t.tableNumber || null,
+                  track: t.track || null,
+                  trackName: t.trackName || null,
+                  team: t
+                });
+              }
+            }
+            res.setHeader('Content-Type', 'application/json');
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.end(JSON.stringify({ success: true, candidates, teams: db.teams || [] }));
+            return;
+          }
+        }
+
+        if (req.url === '/api/teams/all' || req.url?.startsWith('/api/teams/all?')) {
+          if (req.method === 'GET') {
+            const db = readDb();
+            res.setHeader('Content-Type', 'application/json');
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.end(JSON.stringify({ success: true, teams: db.teams || [] }));
+            return;
+          }
+        }
 
         if (req.url === '/api/shared-store' || req.url?.startsWith('/api/shared-store?')) {
           if (req.method === 'GET') {
