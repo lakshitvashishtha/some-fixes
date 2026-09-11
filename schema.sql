@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS teams (
   size INT NOT NULL DEFAULT 3,
   status VARCHAR(20) NOT NULL DEFAULT 'forming', -- 'forming' | 'locked'
   payment_status VARCHAR(30) NOT NULL DEFAULT 'not_submitted', -- 'not_submitted' | 'under_review' | 'verified' | 'rejected'
-  payment_reference VARCHAR(100) NULL,
+  payment_reference VARCHAR(100) NULL UNIQUE,
   payment_amount INT NOT NULL DEFAULT 800,
   payment_submitted_at TIMESTAMP NULL,
   payment_verified_at TIMESTAMP NULL,

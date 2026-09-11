@@ -941,6 +941,19 @@ app.post('/api/teams/create', apiLimiter, async (req, res) => {
     }))
 
     const utr = body.payment?.utr || body.utr || null
+    const cleanUtr = utr ? String(utr).trim() : null
+    if (cleanUtr) {
+      const duplicateTeam = allTeams.find(t =>
+        (t.payment?.utr && t.payment.utr.trim().toLowerCase() === cleanUtr.toLowerCase()) ||
+        (t.payment?.reference && t.payment.reference.trim().toLowerCase() === cleanUtr.toLowerCase()) ||
+        (t.payment_reference && t.payment_reference.trim().toLowerCase() === cleanUtr.toLowerCase())
+      )
+      if (duplicateTeam) {
+        return res.status(400).json({
+          error: `UTR "${cleanUtr}" has already been submitted by squad "${duplicateTeam.name}". Each squad registration requires a unique payment transaction.`
+        })
+      }
+    }
     const newTeam = {
       id: 'team_' + Math.random().toString(36).slice(2, 9),
       name,
@@ -993,6 +1006,22 @@ app.post('/api/teams/:teamId/payment', apiLimiter, async (req, res) => {
     const store = await getFullStore()
     const team = (store.teams || []).find(t => t.id === teamId || t.code === teamId)
     if (!team) return res.status(404).json({ error: 'Team not found' })
+
+    // Enforce UTR uniqueness across all squads
+    const duplicateTeam = (store.teams || []).find(t =>
+      t.id !== team.id &&
+      t.code !== team.id &&
+      (
+        (t.payment?.utr && t.payment.utr.trim().toLowerCase() === cleanUtr.toLowerCase()) ||
+        (t.payment?.reference && t.payment.reference.trim().toLowerCase() === cleanUtr.toLowerCase()) ||
+        (t.payment_reference && t.payment_reference.trim().toLowerCase() === cleanUtr.toLowerCase())
+      )
+    )
+    if (duplicateTeam) {
+      return res.status(400).json({
+        error: `UTR "${cleanUtr}" has already been submitted by squad "${duplicateTeam.name}". Each squad registration requires a unique payment transaction.`
+      })
+    }
 
     team.payment = {
       ...(team.payment || {}),

@@ -1062,6 +1062,15 @@ async function handleFallback(path, options, err) {
     if (!utr || !String(utr).trim()) {
       throw new Error('Registration payment is required. Please scan the QR code and submit your 12-digit UTR transaction ID.')
     }
+    const cleanUtr = String(utr).trim()
+    const duplicateUtrTeam = allRegistered.find(t =>
+      (t.payment?.utr && t.payment.utr.trim().toLowerCase() === cleanUtr.toLowerCase()) ||
+      (t.payment?.reference && t.payment.reference.trim().toLowerCase() === cleanUtr.toLowerCase()) ||
+      (t.payment_reference && t.payment_reference.trim().toLowerCase() === cleanUtr.toLowerCase())
+    )
+    if (duplicateUtrTeam) {
+      throw new Error(`UTR "${cleanUtr}" has already been submitted by squad "${duplicateUtrTeam.name}". Each squad registration requires a unique payment transaction.`)
+    }
 
     const generalCode = generateMemberInviteCode(targetName, leaderName, leaderCollege, 'ALL')
 
@@ -1119,11 +1128,27 @@ async function handleFallback(path, options, err) {
   }
 
   if (path.includes('/payment')) {
+    const cleanUtr = String(body.utr || '').trim()
+    if (cleanUtr) {
+      const allTeams = getAllRegisteredTeams()
+      const targetTeamId = path.replace('/api/teams/', '').replace('/payment', '').split('/')[0]
+      const duplicateTeam = allTeams.find(t =>
+        t.id !== targetTeamId &&
+        (
+          (t.payment?.utr && t.payment.utr.trim().toLowerCase() === cleanUtr.toLowerCase()) ||
+          (t.payment?.reference && t.payment.reference.trim().toLowerCase() === cleanUtr.toLowerCase()) ||
+          (t.payment_reference && t.payment_reference.trim().toLowerCase() === cleanUtr.toLowerCase())
+        )
+      )
+      if (duplicateTeam) {
+        throw new Error(`UTR "${cleanUtr}" has already been submitted by squad "${duplicateTeam.name}". Each squad registration requires a unique payment transaction.`)
+      }
+    }
     const teams = getStoredTeams(currentUser).map((t) => ({
       ...t,
       payment: {
         status: 'submitted',
-        utr: body.utr || '428901238910',
+        utr: cleanUtr || '428901238910',
         submittedAt: new Date().toISOString(),
       },
     }))
