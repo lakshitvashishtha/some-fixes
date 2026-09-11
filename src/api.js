@@ -85,7 +85,15 @@ const DEFAULT_TEAM = {
   },
 }
 
-export const ADMIN_VAULT_KEY = 'cf5_master_access_2026'
+export const getStoredAdminKey = () => {
+  try {
+    return (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('cf_admin_passkey')) || ''
+  } catch {
+    return ''
+  }
+}
+
+export const ADMIN_VAULT_KEY = '' // Deprecated: secrets are not bundled into public client assets
 
 // Shared Store Sync (Cross-Tab, Incognito & Multi-Device Sync)
 export function mergeMembers(membersA = [], membersB = []) {
@@ -2707,11 +2715,21 @@ export function getHackathonStateApi() {
   return request('/api/ops/state')
 }
 
-export function verifyAdminPasskeyApi(passkey) {
-  return request('/api/ops/admin-login', {
+export async function verifyAdminPasskeyApi(passkey) {
+  const cleanKey = (passkey || '').trim()
+  const res = await request('/api/ops/admin-login', {
     method: 'POST',
-    body: JSON.stringify({ passkey }),
+    body: JSON.stringify({ passkey: cleanKey }),
   })
+  if (res?.success) {
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem('cf_admin_passkey', cleanKey)
+      }
+    } catch {}
+    return res
+  }
+  throw new Error(res?.error || 'Access Denied: Invalid Master Passkey')
 }
 
 export function toggleProblemStatementsApi(released, passkey) {
@@ -2794,7 +2812,7 @@ export function getGateTeamsApi() {
   return request('/api/gate/teams')
 }
 
-export function verifyTeamPaymentApi(teamId, verified = true, notes = '', passkey = ADMIN_VAULT_KEY) {
+export function verifyTeamPaymentApi(teamId, verified = true, notes = '', passkey = getStoredAdminKey()) {
   return request('/api/ops/verify-payment', {
     method: 'POST',
     headers: { 'X-Ops-Vault-Key': passkey },
@@ -2802,13 +2820,13 @@ export function verifyTeamPaymentApi(teamId, verified = true, notes = '', passke
   })
 }
 
-export function getRegistrationsLedgerApi(passkey = ADMIN_VAULT_KEY) {
+export function getRegistrationsLedgerApi(passkey = getStoredAdminKey()) {
   return request('/api/ops/registrations', {
-    headers: { 'X-Ops-Vault-Key': passkey },
+    headers: { 'X-Ops-Vault-Key': passkey, 'x-vault-passkey': passkey },
   })
 }
 
-export function removeMentorApi(mentorId, passkey = ADMIN_VAULT_KEY) {
+export function removeMentorApi(mentorId, passkey = getStoredAdminKey()) {
   return request('/api/ops/remove-mentor', {
     method: 'POST',
     headers: { 'X-Ops-Vault-Key': passkey },
@@ -2816,7 +2834,7 @@ export function removeMentorApi(mentorId, passkey = ADMIN_VAULT_KEY) {
   })
 }
 
-export function updateMentorApi(mentorId, payload, passkey = ADMIN_VAULT_KEY) {
+export function updateMentorApi(mentorId, payload, passkey = getStoredAdminKey()) {
   return request('/api/ops/update-mentor', {
     method: 'POST',
     headers: { 'X-Ops-Vault-Key': passkey },
@@ -2824,7 +2842,7 @@ export function updateMentorApi(mentorId, payload, passkey = ADMIN_VAULT_KEY) {
   })
 }
 
-export function removeCoordinatorApi(coordId, passkey = ADMIN_VAULT_KEY) {
+export function removeCoordinatorApi(coordId, passkey = getStoredAdminKey()) {
   return request('/api/ops/remove-coordinator', {
     method: 'POST',
     headers: { 'X-Ops-Vault-Key': passkey },
@@ -2832,7 +2850,7 @@ export function removeCoordinatorApi(coordId, passkey = ADMIN_VAULT_KEY) {
   })
 }
 
-export function updateCoordinatorApi(coordId, payload, passkey = ADMIN_VAULT_KEY) {
+export function updateCoordinatorApi(coordId, payload, passkey = getStoredAdminKey()) {
   return request('/api/ops/update-coordinator', {
     method: 'POST',
     headers: { 'X-Ops-Vault-Key': passkey },
@@ -2840,7 +2858,7 @@ export function updateCoordinatorApi(coordId, payload, passkey = ADMIN_VAULT_KEY
   })
 }
 
-export function revertTeamPaymentApi(teamId, passkey = ADMIN_VAULT_KEY) {
+export function revertTeamPaymentApi(teamId, passkey = getStoredAdminKey()) {
   return request('/api/ops/revert-payment', {
     method: 'POST',
     headers: { 'X-Ops-Vault-Key': passkey },
@@ -2848,7 +2866,7 @@ export function revertTeamPaymentApi(teamId, passkey = ADMIN_VAULT_KEY) {
   })
 }
 
-export function resetUserPasswordApi(email, newPassword, passkey = ADMIN_VAULT_KEY) {
+export function resetUserPasswordApi(email, newPassword, passkey = getStoredAdminKey()) {
   return request('/api/ops/reset-user-password', {
     method: 'POST',
     headers: { 'X-Ops-Vault-Key': passkey },
@@ -2856,7 +2874,7 @@ export function resetUserPasswordApi(email, newPassword, passkey = ADMIN_VAULT_K
   })
 }
 
-export function removeAttendeeApi(teamId, email, earlyExit = true, passkey = ADMIN_VAULT_KEY) {
+export function removeAttendeeApi(teamId, email, earlyExit = true, passkey = getStoredAdminKey()) {
   return request('/api/ops/remove-attendee', {
     method: 'POST',
     headers: { 'X-Ops-Vault-Key': passkey },
@@ -2864,7 +2882,7 @@ export function removeAttendeeApi(teamId, email, earlyExit = true, passkey = ADM
   })
 }
 
-export function reinstateAttendeeApi(teamId, email, passkey = ADMIN_VAULT_KEY) {
+export function reinstateAttendeeApi(teamId, email, passkey = getStoredAdminKey()) {
   return request('/api/ops/reinstate-attendee', {
     method: 'POST',
     headers: { 'X-Ops-Vault-Key': passkey },
@@ -2876,7 +2894,7 @@ export function getProblemStatementsApi() {
   return request('/api/ops/problem-statements')
 }
 
-export function updateProblemStatementsApi(problemStatements, passkey = ADMIN_VAULT_KEY) {
+export function updateProblemStatementsApi(problemStatements, passkey = getStoredAdminKey()) {
   return request('/api/ops/problem-statements', {
     method: 'POST',
     headers: { 'X-Ops-Vault-Key': passkey },

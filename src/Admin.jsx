@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  ADMIN_VAULT_KEY,
+  getStoredAdminKey,
   getHackathonStateApi,
   verifyAdminPasskeyApi,
   toggleProblemStatementsApi,
@@ -32,8 +32,9 @@ import { QRCodeSvg } from './qrGenerator.jsx'
 
 export default function Admin() {
   const [authorized, setAuthorized] = useState(false)
-  const [passkeyInput, setPasskeyInput] = useState('')
+  const [passkeyInput, setPasskeyInput] = useState(() => getStoredAdminKey())
   const [authError, setAuthError] = useState('')
+  const ADMIN_VAULT_KEY = passkeyInput.trim() || getStoredAdminKey()
   const [activeTab, setActiveTab] = useState('registrations') // 'registrations' | 'problems' | 'tables' | 'broadcast' | 'mentors' | 'scores'
   const [hackState, setHackState] = useState(null)
   const [teams, setTeams] = useState([])
@@ -181,14 +182,34 @@ export default function Admin() {
     }
   }, [authorized])
 
+  useEffect(() => {
+    const savedKey = getStoredAdminKey()
+    if (savedKey && !authorized) {
+      verifyAdminPasskeyApi(savedKey)
+        .then(() => setAuthorized(true))
+        .catch(() => {
+          try { sessionStorage.removeItem('cf_admin_passkey') } catch {}
+          setAuthorized(false)
+        })
+    }
+  }, [])
+
   const handleUnlock = async (e) => {
     e.preventDefault()
     setAuthError('')
+    const clean = passkeyInput.trim()
+    if (!clean) {
+      setAuthError('Please enter the security passkey')
+      return
+    }
     try {
-      await verifyAdminPasskeyApi(passkeyInput.trim())
+      await verifyAdminPasskeyApi(clean)
+      try {
+        sessionStorage.setItem('cf_admin_passkey', clean)
+      } catch {}
       setAuthorized(true)
     } catch (err) {
-      setAuthError('Access Denied: Invalid Security Passkey')
+      setAuthError(err.message || 'Access Denied: Invalid Security Passkey')
     }
   }
 
@@ -871,7 +892,11 @@ Track: ${mentor.track || 'All Tracks'}`
           </Link>
           <button
             type="button"
-            onClick={() => setAuthorized(false)}
+            onClick={() => {
+              try { sessionStorage.removeItem('cf_admin_passkey') } catch {}
+              setAuthorized(false)
+              setPasskeyInput('')
+            }}
             className="text-[10px] font-arcade text-red-400 hover:underline"
           >
             Lock Desk

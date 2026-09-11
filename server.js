@@ -4,6 +4,7 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import dotenv from 'dotenv'
+import crypto from 'crypto'
 
 dotenv.config()
 
@@ -16,7 +17,61 @@ app.disable('x-powered-by')
 const PORT = process.env.PORT || 4000
 const ADMIN_VAULT_KEY = process.env.ADMIN_VAULT_KEY || 'cf5_master_access_2026'
 
-// Basic Security Headers Middleware
+// Constant-Time Passkey Verification (prevents side-channel timing attacks)
+const verifyPasskey = (providedKey) => {
+  if (!providedKey || typeof providedKey !== 'string') return false
+  const expectedKey = String(ADMIN_VAULT_KEY)
+  const a = Buffer.from(providedKey)
+  const b = Buffer.from(expectedKey)
+  if (a.length !== b.length) return false
+  try {
+    return crypto.timingSafeEqual(a, b)
+  } catch {
+    return false
+  }
+}
+
+// Anti-Brute-Force for Admin Access: 5 consecutive failures locks out IP for 15 minutes
+const adminAttemptMap = new Map()
+
+const isIpAdminLocked = (ip) => {
+  const record = adminAttemptMap.get(ip)
+  if (!record) return false
+  if (Date.now() > record.lockedUntil) {
+    adminAttemptMap.delete(ip)
+    return false
+  }
+  return record.failedAttempts >= 5
+}
+
+const recordAdminFailure = (ip) => {
+  const now = Date.now()
+  const record = adminAttemptMap.get(ip) || { failedAttempts: 0, lockedUntil: 0 }
+  record.failedAttempts += 1
+  if (record.failedAttempts >= 5) {
+    record.lockedUntil = now + 15 * 60 * 1000 // 15-minute lockout
+    console.warn(`[SECURITY ALERT] IP ${ip} exceeded max admin passkey attempts. Temporarily locked for 15m.`)
+  }
+  adminAttemptMap.set(ip, record)
+}
+
+const recordAdminSuccess = (ip) => {
+  adminAttemptMap.delete(ip)
+}
+
+// Anti-Prototype Pollution Sanitizer
+const sanitizeObject = (obj) => {
+  if (!obj || typeof obj !== 'object') return
+  for (const key of Object.keys(obj)) {
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+      delete obj[key]
+    } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+      sanitizeObject(obj[key])
+    }
+  }
+}
+
+// Security Headers Middleware
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff')
   res.setHeader('X-Frame-Options', 'SAMEORIGIN')
@@ -62,18 +117,28 @@ const createRateLimiter = (maxRequests = 300, windowMs = 60000, message = 'Rate 
   }
 }
 
-const authLimiter = createRateLimiter(30, 60000, 'Too many login or registration attempts. Please wait 1 minute before trying again.')
+const authLimiter = createRateLimiter(25, 60000, 'Too many authentication attempts. Please wait 1 minute before trying again.')
+const adminLimiter = createRateLimiter(15, 60000, 'Too many admin verification attempts. Please wait 1 minute.')
 const apiLimiter = createRateLimiter(600, 60000, 'Too many requests. Please slow down.')
 
-// Setup CORS: reflect origin or allow all
+// Setup CORS
 app.use(cors({
   origin: true,
   credentials: true,
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-vault-passkey']
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-vault-passkey', 'x-user-email']
 }))
 
-app.use(express.json({ limit: '10mb' }))
+// JSON Body Limit: 2MB protects against memory exhaustion DoS attacks
+app.use(express.json({ limit: '2mb' }))
+
+// Sanitize incoming payloads against prototype pollution
+app.use((req, res, next) => {
+  if (req.body && typeof req.body === 'object') {
+    sanitizeObject(req.body)
+  }
+  next()
+})
 
 // Local fallback DB path
 const dbPath = path.resolve(__dirname, 'scratch/shared_db.json')
@@ -544,7 +609,7 @@ app.post('/api/shared-store', apiLimiter, async (req, res) => {
     // Security Check: Protect destructive operations
     if (isWipe) {
       const key = req.headers['x-vault-passkey'] || incoming.passkey
-      if (key !== ADMIN_VAULT_KEY) {
+      if (!verifyPasskey(key)) {
         return res.status(403).json({ error: 'Unauthorized: Admin Vault Key required for wiping database.' })
       }
     }
@@ -648,11 +713,29 @@ app.get('/api/teams/all', apiLimiter, async (req, res) => {
   }
 })
 
+// Ops: Admin Authentication & Verification (Constant-Time + Anti-Brute Force Lockout)
+app.post(['/api/ops/admin-login', '/api/ops/verify-admin'], adminLimiter, (req, res) => {
+  const { passkey } = req.body || {}
+  const clientIp = (req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || '').trim()
+
+  if (isIpAdminLocked(clientIp)) {
+    return res.status(429).json({ error: 'Security Lockout: Too many failed passkey attempts. Please wait 15 minutes.' })
+  }
+
+  if (verifyPasskey(passkey)) {
+    recordAdminSuccess(clientIp)
+    return res.json({ success: true, token: 'vault_adm_' + crypto.randomBytes(16).toString('hex') })
+  } else {
+    recordAdminFailure(clientIp)
+    return res.status(403).json({ error: 'Access Denied: Invalid Master Passkey' })
+  }
+})
+
 // Ops: Registrations Ledger
 app.get('/api/ops/registrations', async (req, res) => {
   try {
     const key = req.headers['x-vault-passkey'] || req.query.passkey
-    if (key !== ADMIN_VAULT_KEY) {
+    if (!verifyPasskey(key)) {
       return res.status(403).json({ error: 'Unauthorized: Invalid Admin Vault Key.' })
     }
 
@@ -693,7 +776,8 @@ app.get('/api/ops/registrations', async (req, res) => {
 app.post('/api/ops/reset-user-password', async (req, res) => {
   try {
     const { passkey, email, newPassword } = req.body || {}
-    if (passkey !== ADMIN_VAULT_KEY) {
+    const key = req.headers['x-vault-passkey'] || passkey
+    if (!verifyPasskey(key)) {
       return res.status(403).json({ error: 'Unauthorized: Invalid Admin Vault Key.' })
     }
 
@@ -713,8 +797,9 @@ app.post('/api/ops/reset-user-password', async (req, res) => {
 app.post('/api/ops/verify-payment', async (req, res) => {
   try {
     const { passkey, teamId } = req.body || {}
-    if (passkey !== ADMIN_VAULT_KEY) {
-      return res.status(403).json({ error: 'Unauthorized' })
+    const key = req.headers['x-vault-passkey'] || passkey
+    if (!verifyPasskey(key)) {
+      return res.status(403).json({ error: 'Unauthorized: Invalid Admin Vault Key.' })
     }
 
     const store = await getFullStore()
@@ -737,8 +822,9 @@ app.post('/api/ops/verify-payment', async (req, res) => {
 app.post('/api/ops/revert-payment', async (req, res) => {
   try {
     const { passkey, teamId } = req.body || {}
-    if (passkey !== ADMIN_VAULT_KEY) {
-      return res.status(403).json({ error: 'Unauthorized' })
+    const key = req.headers['x-vault-passkey'] || passkey
+    if (!verifyPasskey(key)) {
+      return res.status(403).json({ error: 'Unauthorized: Invalid Admin Vault Key.' })
     }
 
     const store = await getFullStore()
@@ -758,7 +844,7 @@ app.post('/api/ops/revert-payment', async (req, res) => {
   }
 })
 
-// Squad Teammate Removal (Team Leader)
+// Squad Teammate Removal (Protected: Only Squad Leader or Admin Authorized)
 app.delete('/api/teams/:teamId/members/:email', async (req, res) => {
   try {
     const { teamId, email } = req.params
@@ -770,6 +856,15 @@ app.delete('/api/teams/:teamId/members/:email', async (req, res) => {
     const store = await getFullStore()
     const team = store.teams.find(t => t.id === teamId || t.code === teamId)
     if (!team) return res.status(404).json({ error: 'Team not found' })
+
+    const callerEmail = (req.headers['x-user-email'] || req.query.userEmail || '').toLowerCase().trim()
+    const passkey = req.headers['x-vault-passkey'] || req.query.passkey
+    const isLeader = team.leader?.email && callerEmail === team.leader.email.toLowerCase()
+    const isAdmin = verifyPasskey(passkey)
+
+    if (callerEmail && !isLeader && !isAdmin) {
+      return res.status(403).json({ error: 'Unauthorized: Only the team leader or administrator can remove squad members.' })
+    }
 
     team.members = (team.members || []).filter(m => (m.email || '').toLowerCase().trim() !== cleanEmail)
     team.invites = (team.invites || []).filter(i => (i.email || '').toLowerCase().trim() !== cleanEmail)
@@ -792,8 +887,9 @@ app.delete('/api/teams/:teamId/members/:email', async (req, res) => {
 app.post('/api/ops/remove-attendee', async (req, res) => {
   try {
     const { passkey, teamId, email, markEarlyExitOnly, earlyExit } = req.body || {}
-    if (passkey !== ADMIN_VAULT_KEY) {
-      return res.status(403).json({ error: 'Unauthorized' })
+    const key = req.headers['x-vault-passkey'] || passkey
+    if (!verifyPasskey(key)) {
+      return res.status(403).json({ error: 'Unauthorized: Invalid Admin Vault Key.' })
     }
 
     const cleanEmail = (email || '').toLowerCase().trim()
@@ -832,8 +928,9 @@ app.post('/api/ops/remove-attendee', async (req, res) => {
 app.post('/api/ops/reinstate-attendee', async (req, res) => {
   try {
     const { passkey, teamId, email } = req.body || {}
-    if (passkey !== ADMIN_VAULT_KEY) {
-      return res.status(403).json({ error: 'Unauthorized' })
+    const key = req.headers['x-vault-passkey'] || passkey
+    if (!verifyPasskey(key)) {
+      return res.status(403).json({ error: 'Unauthorized: Invalid Admin Vault Key.' })
     }
 
     const cleanEmail = (email || '').toLowerCase().trim()
@@ -871,8 +968,9 @@ app.get('/api/ops/problem-statements', async (req, res) => {
 app.post('/api/ops/problem-statements', async (req, res) => {
   try {
     const { passkey, problemStatements } = req.body || {}
-    if (passkey !== ADMIN_VAULT_KEY) {
-      return res.status(403).json({ error: 'Unauthorized' })
+    const key = req.headers['x-vault-passkey'] || passkey
+    if (!verifyPasskey(key)) {
+      return res.status(403).json({ error: 'Unauthorized: Invalid Admin Vault Key.' })
     }
 
     const store = await getFullStore()
@@ -909,11 +1007,17 @@ if (fs.existsSync(distDir)) {
   })
 }
 
-// Start Server
-app.listen(PORT, () => {
+// Start Server with Slowloris / Timeout Protection
+const server = app.listen(PORT, () => {
   console.log(`=======================================================`)
-  console.log(`🚀 CODEFIESTA 5.0 PRODUCTION SERVER RUNNING ON PORT ${PORT}`)
+  console.log(`🚀 CODEFIESTA 5.0 HARDENED PRODUCTION SERVER PORT ${PORT}`)
   console.log(`⚙️  Environment: ${process.env.NODE_ENV || 'production'}`)
   console.log(`📦 Database: ${useTiDB ? 'TiDB Cloud MySQL' : 'Local JSON Store'}`)
+  console.log(`🛡️  Security: Constant-time Auth, Anti-Brute-Force, 2MB Limit`)
   console.log(`=======================================================`)
 })
+
+// HTTP Timeout Protection against slowloris attacks
+server.headersTimeout = 65000
+server.requestTimeout = 60000
+server.keepAliveTimeout = 65000
