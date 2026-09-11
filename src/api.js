@@ -142,153 +142,164 @@ export function mergeMembers(membersA = [], membersB = []) {
   return Array.from(memberMap.values())
 }
 
+// Request deduplication & throttling to protect backend from client stampedes
+let activeSyncPromise = null
+let lastSyncTimestamp = 0
+let lastSyncResult = null
+
 // Shared Store Sync (Cross-Tab, Incognito & Multi-Device Sync)
 export async function syncWithSharedStore(forceOverwrite = false) {
-  if (typeof fetch === 'undefined') return
-  try {
-    const origin = getApiOrigin()
-    // Cache buster ensures we always fetch the newest data from shared_db.json / server
-    const res = await fetch(`${origin}/api/shared-store?_t=${Date.now()}`, {
-      cache: 'no-store',
-      headers: { 'Cache-Control': 'no-cache' },
-    })
-    if (!res.ok) return
-    const json = await res.json()
-    if (!json?.data) return
+  if (typeof fetch === 'undefined') return lastSyncResult
 
-    const { teams, users, opsState, problemStatements } = json.data
-    let finalTeams = []
+  const now = Date.now()
+  // Throttle: If synced less than 2s ago and not forced, return cached result immediately
+  if (!forceOverwrite && lastSyncResult && now - lastSyncTimestamp < 2000) {
+    return lastSyncResult
+  }
 
-    if (Array.isArray(teams)) {
-      if (forceOverwrite) {
-        // Direct authoritative server sync
-        finalTeams = teams.map((t) => ({
-          ...t,
-          tableNumber: (opsState?.tableAssignments?.[t.id]) || t.tableNumber || null,
-        }))
-      } else {
-        let localTeams = []
-        try {
-          const raw = localStorage.getItem('cf_teams')
-          localTeams = raw ? JSON.parse(raw) : []
-        } catch {}
-        const map = new Map(teams.map((t) => [t.id, t]))
-        for (const lt of localTeams) {
-          if (!map.has(lt.id)) {
-            map.set(lt.id, lt)
-          } else {
-            const serverTeam = map.get(lt.id)
-            const teamMembers = Array.isArray(serverTeam.members) ? serverTeam.members : (lt.members || [])
-            const acceptedCount = teamMembers.filter(
-              (m) => (m.status === 'accepted' || m.status === 'confirmed') && !m.earlyExit
-            ).length
-            const assignedTable = (opsState?.tableAssignments?.[lt.id]) || serverTeam.tableNumber || lt.tableNumber || null
-            map.set(lt.id, {
-              ...lt,
-              ...serverTeam,
-              tableNumber: assignedTable,
-              members: teamMembers,
-              acceptedCount: serverTeam.acceptedCount !== undefined ? serverTeam.acceptedCount : acceptedCount,
-              payment: { ...(lt.payment || {}), ...(serverTeam.payment || {}) },
-            })
-          }
-        }
-        finalTeams = Array.from(map.values())
-      }
+  // Coalesce: If a sync is already in flight, reuse the same active promise
+  if (activeSyncPromise) {
+    return activeSyncPromise
+  }
 
-      // Sync opsState table assignments to all teams in map
-      if (opsState?.tableAssignments) {
-        for (const t of finalTeams) {
-          if (opsState.tableAssignments[t.id]) {
-            t.tableNumber = opsState.tableAssignments[t.id]
-          }
-        }
-      }
+  activeSyncPromise = (async () => {
+    try {
+      const origin = getApiOrigin()
+      const res = await fetch(`${origin}/api/shared-store?_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      })
+      if (!res.ok) return lastSyncResult
+      const json = await res.json().catch(() => null)
+      if (!json?.data) return lastSyncResult
 
-      try {
-        localStorage.setItem('cf_teams', JSON.stringify(finalTeams))
-      } catch {}
+      const { teams, users, opsState, problemStatements } = json.data
+      let finalTeams = []
 
-      // Update current user specific team cache
-      const currentUser = getStoredUser()
-      if (currentUser?.email) {
-        const uEmail = currentUser.email.toLowerCase()
-        const userTeams = finalTeams.filter(
-          (t) =>
-            t.leader?.email?.toLowerCase() === uEmail ||
-            (t.members || []).some((m) => m.email?.toLowerCase() === uEmail) ||
-            (t.invites || []).some((i) => i.email?.toLowerCase() === uEmail)
-        )
-        if (userTeams.length > 0) {
+      if (Array.isArray(teams)) {
+        if (forceOverwrite) {
+          // Direct authoritative server sync
+          finalTeams = teams.map((t) => ({
+            ...t,
+            tableNumber: (opsState?.tableAssignments?.[t.id]) || t.tableNumber || null,
+          }))
+        } else {
+          let localTeams = []
           try {
-            localStorage.setItem(`cf_user_teams_${currentUser.email}`, JSON.stringify(userTeams))
+            const raw = localStorage.getItem('cf_teams')
+            localTeams = raw ? JSON.parse(raw) : []
           } catch {}
+          const map = new Map(teams.map((t) => [t.id, t]))
+          for (const lt of localTeams) {
+            if (!map.has(lt.id)) {
+              map.set(lt.id, lt)
+            } else {
+              const serverTeam = map.get(lt.id)
+              const teamMembers = Array.isArray(serverTeam.members) ? serverTeam.members : (lt.members || [])
+              const acceptedCount = teamMembers.filter(
+                (m) => (m.status === 'accepted' || m.status === 'confirmed') && !m.earlyExit
+              ).length
+              const assignedTable = (opsState?.tableAssignments?.[lt.id]) || serverTeam.tableNumber || lt.tableNumber || null
+              map.set(lt.id, {
+                ...lt,
+                ...serverTeam,
+                tableNumber: assignedTable,
+                members: teamMembers,
+                acceptedCount: serverTeam.acceptedCount !== undefined ? serverTeam.acceptedCount : acceptedCount,
+                payment: { ...(lt.payment || {}), ...(serverTeam.payment || {}) },
+              })
+            }
+          }
+          finalTeams = Array.from(map.values())
         }
-      }
-    }
 
-    if (Array.isArray(users)) {
-      let finalUsers = users
-      if (!forceOverwrite) {
-        let localUsers = []
+        // Sync opsState table assignments to all teams in map
+        if (opsState?.tableAssignments) {
+          for (const t of finalTeams) {
+            if (opsState.tableAssignments[t.id]) {
+              t.tableNumber = opsState.tableAssignments[t.id]
+            }
+          }
+        }
+
         try {
-          const raw = localStorage.getItem('cf_all_users')
-          localUsers = raw ? JSON.parse(raw) : []
+          localStorage.setItem('cf_teams', JSON.stringify(finalTeams))
         } catch {}
-        const userMap = new Map(users.map((u) => [u.email?.toLowerCase(), u]))
-        for (const lu of localUsers) {
-          if (lu.email && !userMap.has(lu.email.toLowerCase())) {
-            userMap.set(lu.email.toLowerCase(), lu)
+
+        // Update current user specific team cache
+        const currentUser = getStoredUser()
+        if (currentUser?.email) {
+          const uEmail = currentUser.email.toLowerCase()
+          const myTeam = finalTeams.find(
+            (t) =>
+              t.leader?.email?.toLowerCase() === uEmail ||
+              t.leaderEmail?.toLowerCase() === uEmail ||
+              (t.members || []).some((m) => m.email?.toLowerCase() === uEmail)
+          )
+          if (myTeam) {
+            try {
+              localStorage.setItem(`cf_user_teams_${uEmail}`, JSON.stringify([myTeam]))
+            } catch {}
           }
         }
-        finalUsers = Array.from(userMap.values())
       }
-      try {
-        localStorage.setItem('cf_all_users', JSON.stringify(finalUsers))
-      } catch {}
-    }
 
-    if (opsState) {
-      let currentOps = null
-      try {
-        const raw = localStorage.getItem('cf_sealed_ops_state')
-        if (raw) currentOps = JSON.parse(decodeURIComponent(escape(atob(raw))))
-      } catch {}
-      const mergedOps = forceOverwrite
-        ? { ...opsState }
-        : {
-            ...opsState,
-            ...(currentOps || {}),
-            tableAssignments: {
-              ...(opsState.tableAssignments || {}),
-              ...((currentOps && currentOps.tableAssignments) || {}),
-            },
-          }
-      if (problemStatements) {
-        mergedOps.problemStatements = problemStatements
+      if (opsState) {
+        let currentOps = null
+        try {
+          const raw = localStorage.getItem('cf_sealed_ops_state')
+          if (raw) currentOps = JSON.parse(decodeURIComponent(escape(atob(raw))))
+        } catch {}
+        const mergedOps = forceOverwrite
+          ? { ...opsState }
+          : {
+              ...opsState,
+              ...(currentOps || {}),
+              tableAssignments: {
+                ...(opsState.tableAssignments || {}),
+                ...((currentOps && currentOps.tableAssignments) || {}),
+              },
+            }
+        if (problemStatements) {
+          mergedOps.problemStatements = problemStatements
+        }
+        const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(mergedOps))))
+        try {
+          localStorage.setItem('cf_sealed_ops_state', encoded)
+        } catch {}
       }
-      const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(mergedOps))))
-      try {
-        localStorage.setItem('cf_sealed_ops_state', encoded)
-      } catch {}
-    }
 
-    if (typeof window !== 'undefined' && window.dispatchEvent) {
-      window.dispatchEvent(new CustomEvent('codefiesta_teams_updated', { detail: { teams: finalTeams } }))
-      window.dispatchEvent(new CustomEvent('hackathon:state-updated', { detail: opsState }))
-    }
+      if (typeof window !== 'undefined' && window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('codefiesta_teams_updated', { detail: { teams: finalTeams } }))
+        window.dispatchEvent(new CustomEvent('hackathon:state-updated', { detail: opsState }))
+      }
 
-    return { teams: finalTeams, users, opsState, problemStatements }
-  } catch {}
+      lastSyncTimestamp = Date.now()
+      lastSyncResult = { teams: finalTeams, users, opsState, problemStatements }
+      return lastSyncResult
+    } catch {
+      return lastSyncResult
+    } finally {
+      activeSyncPromise = null
+    }
+  })()
+
+  return activeSyncPromise
 }
 
 export async function pushToSharedStore(payload) {
   if (typeof fetch === 'undefined') return
   try {
     const origin = getApiOrigin()
+    const adminKey = getStoredAdminKey()
+    const headers = { 'Content-Type': 'application/json' }
+    if (adminKey) {
+      headers['x-vault-passkey'] = adminKey
+      headers['x-ops-vault-key'] = adminKey
+    }
     const res = await fetch(`${origin}/api/shared-store`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(payload),
     })
     return await res.json().catch(() => null)
@@ -2522,13 +2533,19 @@ async function handleFallback(path, options, err) {
 }
 
 async function request(path, options = {}) {
-  // If a real external backend is configured (not relative or localhost), attempt it
-  if (BACKEND_URL && !BACKEND_URL.startsWith('/') && !BACKEND_URL.includes('localhost') && !BACKEND_URL.includes('127.0.0.1')) {
+  const origin = getApiOrigin()
+  if (origin) {
     try {
-      const res = await fetch(`${BACKEND_URL}${path}`, {
+      const storedKey = getStoredAdminKey()
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(storedKey ? { 'x-vault-passkey': storedKey, 'x-ops-vault-key': storedKey } : {}),
+        ...(options.headers || {}),
+      }
+      const res = await fetch(`${origin}${path}`, {
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
         ...options,
+        headers,
       })
       const contentType = res.headers.get('content-type') || ''
       if (res.ok && contentType.includes('application/json')) {

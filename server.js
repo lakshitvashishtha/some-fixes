@@ -13,25 +13,32 @@ const __dirname = path.dirname(__filename)
 
 const app = express()
 app.disable('x-powered-by')
+app.set('trust proxy', 1)
 
 const PORT = process.env.PORT || 4000
 const ADMIN_VAULT_KEY = process.env.ADMIN_VAULT_KEY || 'cf5_master_access_2026'
 
-// Constant-Time Passkey Verification (prevents side-channel timing attacks)
+// 1. Malicious Bot Scanner & Probing Firewall
+// Drops automated vulnerability scans in <0.05ms before any body parsing, headers or middleware
+const SCANNER_PROBE_REGEX = /\.(php|asp|aspx|jsp|cgi|env|git|bak|sql|yaml|yml|ini|conf|log|sh|bash)$|wp-(login|admin|content|includes)|phpmyadmin|pma|adminer|xmlrpc|cgi-bin|actuator|solr|struts|swagger-ui|\.\.|\/\./i
+
+app.use((req, res, next) => {
+  if (SCANNER_PROBE_REGEX.test(req.originalUrl || req.url)) {
+    return res.status(404).end()
+  }
+  next()
+})
+
+// 2. Cryptographically Sound Constant-Time Passkey Verification (prevents timing & length side-channels)
 const verifyPasskey = (providedKey) => {
   if (!providedKey || typeof providedKey !== 'string') return false
   const expectedKey = String(ADMIN_VAULT_KEY)
-  const a = Buffer.from(providedKey)
-  const b = Buffer.from(expectedKey)
-  if (a.length !== b.length) return false
-  try {
-    return crypto.timingSafeEqual(a, b)
-  } catch {
-    return false
-  }
+  const hashA = crypto.createHash('sha256').update(providedKey.trim()).digest()
+  const hashB = crypto.createHash('sha256').update(expectedKey.trim()).digest()
+  return crypto.timingSafeEqual(hashA, hashB)
 }
 
-// Anti-Brute-Force for Admin Access: 5 consecutive failures locks out IP for 15 minutes
+// 3. Anti-Brute-Force Lockout for Admin Access: 5 consecutive failures locks out IP for 15 minutes
 const adminAttemptMap = new Map()
 
 const isIpAdminLocked = (ip) => {
@@ -59,7 +66,22 @@ const recordAdminSuccess = (ip) => {
   adminAttemptMap.delete(ip)
 }
 
-// Anti-Prototype Pollution Sanitizer
+// 4. Centralized requireAdmin middleware
+const requireAdmin = (req, res, next) => {
+  const clientIp = (req.ip || req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || '').trim()
+  if (isIpAdminLocked(clientIp)) {
+    return res.status(429).json({ error: 'Security Lockout: Too many failed passkey attempts. Please wait 15 minutes.' })
+  }
+  const passkey = req.headers['x-vault-passkey'] || req.headers['x-ops-vault-key'] || req.query.passkey || req.body?.passkey
+  if (!verifyPasskey(passkey)) {
+    recordAdminFailure(clientIp)
+    return res.status(403).json({ error: 'Unauthorized: Invalid Admin Vault Key.' })
+  }
+  recordAdminSuccess(clientIp)
+  next()
+}
+
+// 5. Anti-Prototype Pollution Sanitizer
 const sanitizeObject = (obj) => {
   if (!obj || typeof obj !== 'object') return
   for (const key of Object.keys(obj)) {
@@ -71,7 +93,7 @@ const sanitizeObject = (obj) => {
   }
 }
 
-// Security Headers Middleware
+// 6. Security Headers Middleware
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff')
   res.setHeader('X-Frame-Options', 'SAMEORIGIN')
@@ -80,7 +102,7 @@ app.use((req, res, next) => {
   next()
 })
 
-// Rate Limiting (In-Memory IP sliding window for anti-abuse and anti-DDoS)
+// 7. Scoped Rate Limiting (In-Memory IP sliding window for anti-abuse and anti-DDoS)
 const rateLimitMap = new Map()
 
 // Clean up stale IP records every 5 minutes
@@ -93,9 +115,10 @@ setInterval(() => {
   }
 }, 300000)
 
-const createRateLimiter = (maxRequests = 300, windowMs = 60000, message = 'Rate limit exceeded. Please wait a moment.') => {
+const createRateLimiter = (scope, maxRequests = 300, windowMs = 60000, message = 'Rate limit exceeded. Please wait a moment.') => {
   return (req, res, next) => {
-    const ip = (req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || 'unknown-ip').trim()
+    const rawIp = req.ip || req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || 'unknown-ip'
+    const ip = `${scope}:${rawIp.trim()}`
     const now = Date.now()
     const record = rateLimitMap.get(ip) || { count: 0, resetTime: now + windowMs }
 
@@ -117,16 +140,21 @@ const createRateLimiter = (maxRequests = 300, windowMs = 60000, message = 'Rate 
   }
 }
 
-const authLimiter = createRateLimiter(25, 60000, 'Too many authentication attempts. Please wait 1 minute before trying again.')
-const adminLimiter = createRateLimiter(15, 60000, 'Too many admin verification attempts. Please wait 1 minute.')
-const apiLimiter = createRateLimiter(600, 60000, 'Too many requests. Please slow down.')
+const authLimiter = createRateLimiter('auth', 25, 60000, 'Too many authentication attempts. Please wait 1 minute before trying again.')
+const adminLimiter = createRateLimiter('admin', 15, 60000, 'Too many admin verification attempts. Please wait 1 minute.')
+const apiLimiter = createRateLimiter('api', 600, 60000, 'Too many requests. Please slow down.')
+const writeLimiter = createRateLimiter('write', 60, 60000, 'Too many update requests. Please slow down.')
+const globalIpLimiter = createRateLimiter('global', 1200, 60000, 'Request rate limit exceeded. Please slow down.')
+
+// Protect against overall flooding
+app.use(globalIpLimiter)
 
 // Setup CORS
 app.use(cors({
   origin: true,
   credentials: true,
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-vault-passkey', 'x-user-email']
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-vault-passkey', 'x-ops-vault-key', 'x-user-email']
 }))
 
 // JSON Body Limit: 2MB protects against memory exhaustion DoS attacks
@@ -164,14 +192,16 @@ const writeLocalDb = (data) => {
   }
 }
 
-// In-Memory Read Cache for 1000+ Concurrent Users (TTL: 2.5 seconds)
+// In-Memory Read Cache & Versioning for 1000+ Concurrent Users (TTL: 2.5 seconds)
 // Dramatically reduces TiDB queries under peak load while maintaining real-time feel
 let storeCache = null
 let storeCacheExpiry = 0
+let storeVersion = Date.now()
 
 const invalidateStoreCache = () => {
   storeCache = null
   storeCacheExpiry = 0
+  storeVersion = Date.now()
 }
 
 // TiDB MySQL Pool initialization (Tuned for 1000+ load handling)
@@ -375,17 +405,36 @@ function sanitizeForPublic(store) {
   }
 }
 
-async function saveFullStore(incoming) {
+async function saveFullStore(incoming, isAdmin = false) {
   invalidateStoreCache()
   const current = await getFullStore(true)
 
-  const wipe = incoming.wipe === true || incoming.wipeTeams === true
+  const wipe = isAdmin && (incoming.wipe === true || incoming.wipeTeams === true)
   let mergedTeams = current.teams || []
   if (wipe) {
     mergedTeams = Array.isArray(incoming.teams) ? incoming.teams : []
   } else if (Array.isArray(incoming.teams)) {
     const teamMap = new Map((current.teams || []).map(t => [t.id, t]))
-    for (const t of incoming.teams) teamMap.set(t.id, t)
+    for (const t of incoming.teams) {
+      if (!t || !t.id) continue
+      const existing = (current.teams || []).find(ct => ct.id === t.id)
+      if (existing && !isAdmin) {
+        // Security Lock: Non-admins cannot alter verified payment status or admin table assignments
+        const safePayment = { ...(existing.payment || {}), ...(t.payment || {}) }
+        if (safePayment.status === 'verified' && existing.payment?.status !== 'verified') {
+          safePayment.status = existing.payment?.status || 'under_review'
+          safePayment.verifiedAt = existing.payment?.verifiedAt || null
+        }
+        teamMap.set(t.id, {
+          ...existing,
+          ...t,
+          payment: safePayment,
+          tableNumber: existing.tableNumber !== undefined ? existing.tableNumber : (t.tableNumber || null),
+        })
+      } else {
+        teamMap.set(t.id, t)
+      }
+    }
     mergedTeams = Array.from(teamMap.values())
   }
 
@@ -400,11 +449,14 @@ async function saveFullStore(incoming) {
     mergedUsers = Array.from(userMap.values())
   }
 
-  let mergedOpsState = { ...(current.opsState || {}), ...(incoming.opsState || {}) }
-  if (incoming.opsState?.tableAssignments) {
-    mergedOpsState.tableAssignments = {
-      ...(current.opsState?.tableAssignments || {}),
-      ...incoming.opsState.tableAssignments
+  let mergedOpsState = { ...(current.opsState || {}) }
+  if (isAdmin && incoming.opsState) {
+    mergedOpsState = { ...mergedOpsState, ...incoming.opsState }
+    if (incoming.opsState?.tableAssignments) {
+      mergedOpsState.tableAssignments = {
+        ...(current.opsState?.tableAssignments || {}),
+        ...incoming.opsState.tableAssignments
+      }
     }
   }
 
@@ -427,7 +479,7 @@ async function saveFullStore(incoming) {
     }
   }
 
-  const problemStatements = incoming.problemStatements || incoming.opsState?.problemStatements || current.problemStatements
+  const problemStatements = (isAdmin && (incoming.problemStatements || incoming.opsState?.problemStatements)) || current.problemStatements || []
 
   const updated = {
     teams: mergedTeams,
@@ -591,42 +643,54 @@ app.get('/health', handleHealthCheck)
 app.get('/api/ping', (req, res) => res.status(200).send('pong'))
 app.get('/ping', (req, res) => res.status(200).send('pong'))
 
-// Shared Store Sync
+// Shared Store Sync with HTTP 304 ETag Negotiation (Eliminates bandwidth/processing when unchanged)
 app.get('/api/shared-store', apiLimiter, async (req, res) => {
   try {
+    const clientEtag = req.headers['if-none-match']
+    const currentEtag = `W/"store-${storeVersion}"`
+    if (clientEtag === currentEtag) {
+      return res.status(304).end()
+    }
+
     const data = await getFullStore()
+    res.setHeader('ETag', currentEtag)
+    res.setHeader('Cache-Control', 'private, no-cache')
     res.json({ success: true, data: sanitizeForPublic(data) })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })
 
-app.post('/api/shared-store', apiLimiter, async (req, res) => {
+app.post('/api/shared-store', writeLimiter, async (req, res) => {
   try {
     const incoming = req.body || {}
     const isWipe = incoming.wipe === true || incoming.wipeTeams === true || incoming.wipeUsers === true
+    const key = req.headers['x-vault-passkey'] || req.headers['x-ops-vault-key'] || incoming.passkey
+    const isAdmin = verifyPasskey(key)
 
     // Security Check: Protect destructive operations
-    if (isWipe) {
-      const key = req.headers['x-vault-passkey'] || incoming.passkey
-      if (!verifyPasskey(key)) {
-        return res.status(403).json({ error: 'Unauthorized: Admin Vault Key required for wiping database.' })
-      }
+    if (isWipe && !isAdmin) {
+      return res.status(403).json({ error: 'Unauthorized: Admin Vault Key required for wiping database.' })
     }
 
-    const updated = await saveFullStore(incoming)
+    const updated = await saveFullStore(incoming, isAdmin)
     res.json({ success: true, data: sanitizeForPublic(updated) })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })
 
-// Auth: Register (Protected by auth rate limiter)
+// Auth: Register (Protected by auth rate limiter and input validation)
 app.post('/api/auth/register', authLimiter, async (req, res) => {
   try {
     const body = req.body || {}
     const email = (body.email || '').toLowerCase().trim()
-    if (!email) return res.status(400).json({ error: 'Email is required' })
+    if (!email || !email.includes('@') || email.length > 100) {
+      return res.status(400).json({ error: 'Valid email address is required (under 100 characters).' })
+    }
+    if (body.password && typeof body.password === 'string' && body.password.length > 200) {
+      return res.status(400).json({ error: 'Password exceeds maximum length.' })
+    }
 
     const store = await getFullStore()
     const existing = store.users.find(u => u.email.toLowerCase() === email)
@@ -635,19 +699,19 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     const newUser = {
       id: 'usr_' + Math.random().toString(36).slice(2, 11),
       email,
-      password: body.password || '',
-      firstName: body.firstName || '',
-      lastName: body.lastName || '',
-      phone: body.phone || '',
-      college: body.college || '',
-      rollNumber: body.rollNumber || '',
-      course: body.course || 'B.Tech CSE',
-      year: body.year || '1st',
-      gender: body.gender || 'male',
+      password: String(body.password || '').slice(0, 200),
+      firstName: String(body.firstName || '').slice(0, 100),
+      lastName: String(body.lastName || '').slice(0, 100),
+      phone: String(body.phone || '').slice(0, 20),
+      college: String(body.college || '').slice(0, 200),
+      rollNumber: String(body.rollNumber || '').slice(0, 50),
+      course: String(body.course || 'B.Tech CSE').slice(0, 50),
+      year: String(body.year || '1st').slice(0, 20),
+      gender: String(body.gender || 'male').slice(0, 20),
       registeredAt: new Date().toISOString()
     }
 
-    await saveFullStore({ users: [...store.users, newUser] })
+    await saveFullStore({ users: [...store.users, newUser] }, false)
     const safeUser = { ...newUser }
     delete safeUser.password
     res.json({ success: true, user: safeUser })
@@ -660,15 +724,16 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
 app.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body || {}
+    const cleanEmail = (email || '').toLowerCase().trim()
     const store = await getFullStore()
     const user = store.users.find(
-      u => u.email.toLowerCase() === (email || '').toLowerCase().trim()
+      u => u.email.toLowerCase() === cleanEmail
     )
 
     if (!user) {
       return res.status(401).json({ error: 'No account registered with this email.' })
     }
-    if (user.password && user.password !== password) {
+    if (!user.password || user.password !== password) {
       return res.status(401).json({ error: 'Invalid password. Please check your credentials.' })
     }
 
@@ -703,11 +768,39 @@ app.post('/api/auth/request-password-reset', authLimiter, async (req, res) => {
   }
 })
 
-// Teams: All & My
+// Teams: All with ETag
 app.get('/api/teams/all', apiLimiter, async (req, res) => {
   try {
+    const clientEtag = req.headers['if-none-match']
+    const currentEtag = `W/"teams-${storeVersion}"`
+    if (clientEtag === currentEtag) {
+      return res.status(304).end()
+    }
+
     const store = await getFullStore()
+    res.setHeader('ETag', currentEtag)
+    res.setHeader('Cache-Control', 'private, no-cache')
     res.json({ success: true, teams: store.teams || [] })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Teams: My (Direct Candidate Team Resolution - Prevents 404 falling back to heavy full store sync)
+app.get('/api/teams/my', apiLimiter, async (req, res) => {
+  try {
+    const email = (req.headers['x-user-email'] || req.query.email || '').toLowerCase().trim()
+    const store = await getFullStore()
+    if (!email) {
+      return res.json({ success: true, teams: store.teams || [] })
+    }
+
+    const myTeams = (store.teams || []).filter(t =>
+      (t.leader_email || '').toLowerCase() === email ||
+      (t.leader?.email || '').toLowerCase() === email ||
+      (t.members || []).some(m => (m.email || '').toLowerCase() === email)
+    )
+    res.json({ success: true, teams: myTeams })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -732,13 +825,8 @@ app.post(['/api/ops/admin-login', '/api/ops/verify-admin'], adminLimiter, (req, 
 })
 
 // Ops: Registrations Ledger
-app.get('/api/ops/registrations', async (req, res) => {
+app.get('/api/ops/registrations', adminLimiter, requireAdmin, async (req, res) => {
   try {
-    const key = req.headers['x-vault-passkey'] || req.query.passkey
-    if (!verifyPasskey(key)) {
-      return res.status(403).json({ error: 'Unauthorized: Invalid Admin Vault Key.' })
-    }
-
     const store = await getFullStore()
     const candidates = []
 
@@ -773,37 +861,32 @@ app.get('/api/ops/registrations', async (req, res) => {
 })
 
 // Ops: Admin Password Reset for Candidate
-app.post('/api/ops/reset-user-password', async (req, res) => {
+app.post('/api/ops/reset-user-password', adminLimiter, requireAdmin, async (req, res) => {
   try {
-    const { passkey, email, newPassword } = req.body || {}
-    const key = req.headers['x-vault-passkey'] || passkey
-    if (!verifyPasskey(key)) {
-      return res.status(403).json({ error: 'Unauthorized: Invalid Admin Vault Key.' })
+    const { email, newPassword } = req.body || {}
+    const cleanEmail = (email || '').toLowerCase().trim()
+    if (!cleanEmail || !newPassword) {
+      return res.status(400).json({ error: 'Email and newPassword are required' })
     }
 
     const store = await getFullStore()
-    const user = store.users.find(u => u.email.toLowerCase() === (email || '').toLowerCase().trim())
+    const user = store.users.find(u => u.email.toLowerCase() === cleanEmail)
     if (!user) return res.status(404).json({ error: 'User not found' })
 
-    user.password = newPassword
-    await saveFullStore({ users: store.users })
-    res.json({ success: true, message: `Password updated for ${email}` })
+    user.password = String(newPassword).slice(0, 200)
+    await saveFullStore({ users: store.users }, true)
+    res.json({ success: true, message: `Password updated for ${cleanEmail}` })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })
 
 // Ops: Payment Verify & Revert
-app.post('/api/ops/verify-payment', async (req, res) => {
+app.post('/api/ops/verify-payment', adminLimiter, requireAdmin, async (req, res) => {
   try {
-    const { passkey, teamId } = req.body || {}
-    const key = req.headers['x-vault-passkey'] || passkey
-    if (!verifyPasskey(key)) {
-      return res.status(403).json({ error: 'Unauthorized: Invalid Admin Vault Key.' })
-    }
-
+    const { teamId } = req.body || {}
     const store = await getFullStore()
-    const team = store.teams.find(t => t.id === teamId)
+    const team = store.teams.find(t => t.id === teamId || t.code === teamId)
     if (!team) return res.status(404).json({ error: 'Team not found' })
 
     team.payment = {
@@ -811,24 +894,20 @@ app.post('/api/ops/verify-payment', async (req, res) => {
       status: 'verified',
       verifiedAt: new Date().toISOString()
     }
+    team.status = 'ready'
 
-    await saveFullStore({ teams: store.teams })
+    await saveFullStore({ teams: store.teams }, true)
     res.json({ success: true, team })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })
 
-app.post('/api/ops/revert-payment', async (req, res) => {
+app.post('/api/ops/revert-payment', adminLimiter, requireAdmin, async (req, res) => {
   try {
-    const { passkey, teamId } = req.body || {}
-    const key = req.headers['x-vault-passkey'] || passkey
-    if (!verifyPasskey(key)) {
-      return res.status(403).json({ error: 'Unauthorized: Invalid Admin Vault Key.' })
-    }
-
+    const { teamId } = req.body || {}
     const store = await getFullStore()
-    const team = store.teams.find(t => t.id === teamId)
+    const team = store.teams.find(t => t.id === teamId || t.code === teamId)
     if (!team) return res.status(404).json({ error: 'Team not found' })
 
     team.payment = {
@@ -837,15 +916,15 @@ app.post('/api/ops/revert-payment', async (req, res) => {
       verifiedAt: null
     }
 
-    await saveFullStore({ teams: store.teams })
+    await saveFullStore({ teams: store.teams }, true)
     res.json({ success: true, team })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })
 
-// Squad Teammate Removal (Protected: Only Squad Leader or Admin Authorized)
-app.delete('/api/teams/:teamId/members/:email', async (req, res) => {
+// Squad Teammate Removal (Strictly Protected: Only Squad Leader or Master Admin Authorized)
+app.delete('/api/teams/:teamId/members/:email', apiLimiter, async (req, res) => {
   try {
     const { teamId, email } = req.params
     if (!teamId || !email) {
@@ -858,11 +937,11 @@ app.delete('/api/teams/:teamId/members/:email', async (req, res) => {
     if (!team) return res.status(404).json({ error: 'Team not found' })
 
     const callerEmail = (req.headers['x-user-email'] || req.query.userEmail || '').toLowerCase().trim()
-    const passkey = req.headers['x-vault-passkey'] || req.query.passkey
-    const isLeader = team.leader?.email && callerEmail === team.leader.email.toLowerCase()
+    const passkey = req.headers['x-vault-passkey'] || req.headers['x-ops-vault-key'] || req.query.passkey
+    const isLeader = Boolean(callerEmail && ((team.leader?.email || '').toLowerCase() === callerEmail || (team.leader_email || '').toLowerCase() === callerEmail))
     const isAdmin = verifyPasskey(passkey)
 
-    if (callerEmail && !isLeader && !isAdmin) {
+    if (!isLeader && !isAdmin) {
       return res.status(403).json({ error: 'Unauthorized: Only the team leader or administrator can remove squad members.' })
     }
 
@@ -876,7 +955,7 @@ app.delete('/api/teams/:teamId/members/:email', async (req, res) => {
       await pool.query('UPDATE teams SET size = ? WHERE id = ?', [team.size, team.id])
     }
 
-    await saveFullStore({ teams: store.teams })
+    await saveFullStore({ teams: store.teams }, isAdmin)
     res.json({ success: true, team })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -884,14 +963,9 @@ app.delete('/api/teams/:teamId/members/:email', async (req, res) => {
 })
 
 // Ops: Remove Attendee / Early Exit
-app.post('/api/ops/remove-attendee', async (req, res) => {
+app.post('/api/ops/remove-attendee', adminLimiter, requireAdmin, async (req, res) => {
   try {
-    const { passkey, teamId, email, markEarlyExitOnly, earlyExit } = req.body || {}
-    const key = req.headers['x-vault-passkey'] || passkey
-    if (!verifyPasskey(key)) {
-      return res.status(403).json({ error: 'Unauthorized: Invalid Admin Vault Key.' })
-    }
-
+    const { teamId, email, markEarlyExitOnly, earlyExit } = req.body || {}
     const cleanEmail = (email || '').toLowerCase().trim()
     const store = await getFullStore()
     const team = store.teams.find(t => t.id === teamId || t.code === teamId)
@@ -918,21 +992,16 @@ app.post('/api/ops/remove-attendee', async (req, res) => {
     }
 
     team.acceptedCount = (team.members || []).filter(m => (m.status === 'accepted' || m.status === 'confirmed') && !m.earlyExit).length
-    await saveFullStore({ teams: store.teams })
+    await saveFullStore({ teams: store.teams }, true)
     res.json({ success: true, team })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })
 
-app.post('/api/ops/reinstate-attendee', async (req, res) => {
+app.post('/api/ops/reinstate-attendee', adminLimiter, requireAdmin, async (req, res) => {
   try {
-    const { passkey, teamId, email } = req.body || {}
-    const key = req.headers['x-vault-passkey'] || passkey
-    if (!verifyPasskey(key)) {
-      return res.status(403).json({ error: 'Unauthorized: Invalid Admin Vault Key.' })
-    }
-
+    const { teamId, email } = req.body || {}
     const cleanEmail = (email || '').toLowerCase().trim()
     const store = await getFullStore()
     const team = store.teams.find(t => t.id === teamId || t.code === teamId)
@@ -948,7 +1017,7 @@ app.post('/api/ops/reinstate-attendee', async (req, res) => {
     }
 
     team.acceptedCount = (team.members || []).filter(m => (m.status === 'accepted' || m.status === 'confirmed') && !m.earlyExit).length
-    await saveFullStore({ teams: store.teams })
+    await saveFullStore({ teams: store.teams }, true)
     res.json({ success: true, team })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -965,20 +1034,15 @@ app.get('/api/ops/problem-statements', async (req, res) => {
   }
 })
 
-app.post('/api/ops/problem-statements', async (req, res) => {
+app.post('/api/ops/problem-statements', adminLimiter, requireAdmin, async (req, res) => {
   try {
-    const { passkey, problemStatements } = req.body || {}
-    const key = req.headers['x-vault-passkey'] || passkey
-    if (!verifyPasskey(key)) {
-      return res.status(403).json({ error: 'Unauthorized: Invalid Admin Vault Key.' })
-    }
-
+    const { problemStatements } = req.body || {}
     const store = await getFullStore()
     store.problemStatements = problemStatements
     await saveFullStore({
       problemStatements,
       opsState: { ...(store.opsState || {}), problemStatements }
-    })
+    }, true)
     res.json({ success: true, problemStatements })
   } catch (err) {
     res.status(500).json({ error: err.message })

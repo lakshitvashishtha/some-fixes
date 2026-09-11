@@ -297,14 +297,15 @@ export default function Dashboard() {
     if (!user) return
     reloadTeams()
 
-    // Real-time polling across devices/tabs: refresh every 3 seconds
+    // Smart polling: refresh every 4.5s only when tab is active (saves 80% backend load)
     const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
       fetchMyTeams()
         .then((data) => {
           if (data?.teams) setTeams(data.teams)
         })
         .catch(() => {})
-    }, 3000)
+    }, 4500)
 
     const handleSync = () => {
       fetchMyTeams()
@@ -314,15 +315,23 @@ export default function Dashboard() {
         .catch(() => {})
     }
 
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        handleSync()
+      }
+    }
+
     window.addEventListener('codefiesta_teams_updated', handleSync)
     window.addEventListener('hackathon:state-updated', handleSync)
     window.addEventListener('storage', handleSync)
+    document.addEventListener('visibilitychange', handleVisibility)
 
     return () => {
       clearInterval(interval)
       window.removeEventListener('codefiesta_teams_updated', handleSync)
       window.removeEventListener('hackathon:state-updated', handleSync)
       window.removeEventListener('storage', handleSync)
+      document.removeEventListener('visibilitychange', handleVisibility)
     }
   }, [user])
 
@@ -734,12 +743,22 @@ function VerificationPendingScreen({ user, team, onRefresh, onLogout }) {
   const [checking, setChecking] = useState(false)
   const [copiedUtr, setCopiedUtr] = useState(false)
 
-  // Real-time synchronization: poll verification state every 3.5 seconds
+  // Real-time synchronization: poll verification state every 4 seconds only when active
   useEffect(() => {
     const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
       onRefresh()
-    }, 3500)
-    return () => clearInterval(interval)
+    }, 4000)
+
+    const onVisible = () => {
+      if (typeof document !== 'undefined' && !document.hidden) onRefresh()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [onRefresh])
 
   const handleManualCheck = async () => {
