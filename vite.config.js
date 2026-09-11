@@ -37,6 +37,17 @@ function sharedStatePlugin() {
     name: 'shared-state-plugin',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
+        if (req.url === '/api/health' || req.url === '/health' || req.url === '/api/ping') {
+          res.setHeader('Content-Type', 'application/json');
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.end(JSON.stringify({
+            status: 'ok',
+            app: 'CodeFiesta 5.0 Dev Server',
+            timestamp: new Date().toISOString()
+          }));
+          return;
+        }
+
         if (req.url === '/api/shared-store' || req.url?.startsWith('/api/shared-store?')) {
           if (req.method === 'GET') {
             const data = readDb();

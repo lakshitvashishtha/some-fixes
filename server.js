@@ -409,16 +409,22 @@ async function saveFullStore(incoming) {
 // API ROUTES
 // ----------------------------------------------------------------------------
 
-// Health Check
-app.get('/health', (req, res) => {
-  res.json({
+// Health Check & Uptime Monitoring (for UptimeRobot, Render, etc.)
+const handleHealthCheck = (req, res) => {
+  res.status(200).json({
     status: 'ok',
+    uptime: Math.floor(process.uptime()),
     app: 'CodeFiesta 5.0 Arena Backend',
     database: useTiDB ? 'TiDB Cloud Serverless' : 'Local Persistent JSON',
     port: PORT,
     timestamp: new Date().toISOString()
   })
-})
+}
+
+app.get('/api/health', handleHealthCheck)
+app.get('/health', handleHealthCheck)
+app.get('/api/ping', (req, res) => res.status(200).send('pong'))
+app.get('/ping', (req, res) => res.status(200).send('pong'))
 
 // Shared Store Sync
 app.get('/api/shared-store', async (req, res) => {
@@ -776,6 +782,15 @@ if (fs.existsSync(distDir)) {
     } else {
       res.status(404).json({ error: 'Endpoint not found' })
     }
+  })
+} else {
+  app.get('/', (req, res) => {
+    res.status(200).json({
+      status: 'ok',
+      service: 'CodeFiesta 5.0 Arena Backend API',
+      health: '/api/health',
+      uptime: Math.floor(process.uptime())
+    })
   })
 }
 
