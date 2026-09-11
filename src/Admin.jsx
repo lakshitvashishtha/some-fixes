@@ -930,7 +930,7 @@ Track: ${mentor.track || 'All Tracks'}`
                   </h2>
                 </div>
                 <p className="text-xs text-slate-400 font-mono mt-1">
-                  Live spreadsheet of all candidate registrations. Match incoming ₹600 UPI payments against bank statements, approve UTRs, and dispatch official confirmation emails.
+                  Live spreadsheet of all candidate registrations. Match incoming ₹800 UPI payments against bank statements, approve UTRs, and dispatch official confirmation emails.
                 </p>
               </div>
 
@@ -1230,7 +1230,7 @@ Track: ${mentor.track || 'All Tracks'}`
                               </span>
                             )}
                             <div className="text-[9px] text-slate-500 font-mono mt-0.5">
-                              Fee: ₹{c.amount || 600}
+                              Fee: ₹{c.amount || 800}
                             </div>
                           </td>
 
@@ -2902,7 +2902,7 @@ Track: ${mentor.track || 'All Tracks'}`
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Required Amount:</span>
-                <span className="text-emerald-400 font-bold">₹600 INR</span>
+                <span className="text-emerald-400 font-bold">₹800 INR</span>
               </div>
               <div className="flex justify-between items-center pt-2 border-t border-slate-800/80">
                 <span className="text-slate-500">Claimed 12-Digit UTR:</span>
@@ -2929,7 +2929,7 @@ Track: ${mentor.track || 'All Tracks'}`
                 className="mt-1 h-4 w-4 rounded border-slate-600 text-tactical focus:ring-tactical"
               />
               <span className="text-xs text-white font-mono font-medium">
-                I confirm that I have physically verified the ₹600 transaction credit in our bank account statement for this 12-digit UTR.
+                I confirm that I have physically verified the ₹800 transaction credit in our bank account statement for this 12-digit UTR.
               </span>
             </label>
 

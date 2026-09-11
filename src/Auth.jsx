@@ -391,7 +391,7 @@ function Auth() {
         members: activeTeammates,
         payment: {
           utr: cleanUtr,
-          amount: 600,
+          amount: 800,
           status: 'submitted',
         },
       })
@@ -486,7 +486,7 @@ function Auth() {
       : step === 2
         ? 'Step 2 of 3 — Complete leader details & all teammate profiles'
         : step === 3
-          ? 'Step 3 of 3 — Scan QR, pay ₹600 squad fee & enter 12-digit UTR'
+          ? 'Step 3 of 3 — Scan QR, pay ₹800 squad fee & enter 12-digit UTR'
           : loginTab === 'partyCode'
             ? 'Enter the party code provided by your leader — no password required'
             : 'Sign in to access your squad dashboard & evaluations'
@@ -494,7 +494,7 @@ function Auth() {
   const toggleBtnClass =
     'absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded bg-[#171924] hover:bg-[#1e2233] border border-slate-700 text-tactical text-[9px] sm:text-[10px] uppercase tracking-wider font-mono'
 
-  const upiPaymentUri = `upi://pay?pa=git.codefiesta@upi&pn=Codefiesta%205.0&am=600&cu=INR&tn=Codefiesta%20Registration`
+  const upiPaymentUri = `upi://pay?pa=git.codefiesta@upi&pn=Codefiesta%205.0&am=800&cu=INR&tn=Codefiesta%20Registration`
 
   return (
     <div className="auth-page min-h-dvh w-full bg-[#07080e] text-slate-200 font-mono overflow-y-auto">
@@ -1072,7 +1072,7 @@ function Auth() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="text-lg font-sans font-black text-tactical">₹600</div>
+                        <div className="text-lg font-sans font-black text-tactical">₹800</div>
                         <div className="text-[9px] text-slate-400 uppercase font-mono">Total Squad Fee</div>
                       </div>
                     </div>
@@ -1121,7 +1121,7 @@ function Auth() {
                     {/* Instructions */}
                     <div className="p-3 rounded bg-[#101422] border border-slate-800 text-[10px] sm:text-xs text-slate-400 space-y-1">
                       <div className="font-bold text-slate-300">Payment Steps:</div>
-                      <div>1. Scan QR with your UPI app or pay ₹600 to <code className="text-tactical">git.codefiesta@upi</code>.</div>
+                      <div>1. Scan QR with your UPI app or pay ₹800 to <code className="text-tactical">git.codefiesta@upi</code>.</div>
                       <div>2. Copy the 12-digit UTR / UPI Transaction Reference Number from your payment receipt.</div>
                       <div>3. Paste the UTR below and click Final Submission. Our organizing committee will match your transaction and unlock your dashboard.</div>
                     </div>

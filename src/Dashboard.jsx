@@ -882,7 +882,7 @@ function VerificationPendingScreen({ user, team, onRefresh, onLogout }) {
               </div>
               <div className="flex items-center justify-between text-xs">
                 <span className="text-slate-400">Registration Fee:</span>
-                <span className="font-mono text-emerald-400 font-bold">₹{team.payment?.amount || 600} INR</span>
+                <span className="font-mono text-emerald-400 font-bold">₹{team.payment?.amount || 800} INR</span>
               </div>
             </div>
 
@@ -1205,7 +1205,7 @@ function FirstTimeOnboarding({ user, onTeamCreated, onTeamJoined }) {
         })),
         payment: {
           utr: trimmedUtr,
-          amount: 600,
+          amount: 800,
           status: 'submitted',
           submittedAt: new Date().toISOString(),
         },
@@ -1391,7 +1391,7 @@ function FirstTimeOnboarding({ user, onTeamCreated, onTeamJoined }) {
                   : 'bg-[#101424] border-slate-800 text-slate-500'
               }`}>
                 <span>2.</span>
-                <span className="truncate">2. Payment Scanner &amp; UTR (₹600)</span>
+                <span className="truncate">2. Payment Scanner &amp; UTR (₹800)</span>
               </div>
             </div>
 
@@ -1730,7 +1730,7 @@ function FirstTimeOnboarding({ user, onTeamCreated, onTeamJoined }) {
                     type="submit"
                     className="flex-1 btn-ribbed bg-tactical hover:bg-[#e6a600] text-black font-sans font-bold text-xs sm:text-sm py-3.5 rounded-xl border-b-2 border-[#b28200] uppercase tracking-wider shadow-lg"
                   >
-                    CONTINUE TO PAYMENT SCANNER (₹600) &gt;&gt;
+                    CONTINUE TO PAYMENT SCANNER (₹800) &gt;&gt;
                   </button>
                   <button
                     type="button"
@@ -1746,13 +1746,13 @@ function FirstTimeOnboarding({ user, onTeamCreated, onTeamJoined }) {
                 {/* QR Code & UPI Container */}
                 <div className="p-5 rounded-xl bg-[#0f1426] border border-slate-800 text-center space-y-4">
                   <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-tactical/10 border border-tactical/40 text-tactical text-xs font-mono font-bold">
-                    <span>💳</span> REGISTRATION FEE: ₹600.00
+                    <span>💳</span> REGISTRATION FEE: ₹800.00
                   </div>
 
                   <div className="flex flex-col items-center justify-center">
                     <div className="bg-white p-3.5 rounded-xl shadow-2xl border-2 border-tactical/80">
                       <QRCodeSvg
-                        value="upi://pay?pa=git.codefiesta@upi&pn=Codefiesta%205.0&am=600&cu=INR"
+                        value="upi://pay?pa=git.codefiesta@upi&pn=Codefiesta%205.0&am=800&cu=INR"
                         size={170}
                       />
                     </div>
@@ -1775,7 +1775,7 @@ function FirstTimeOnboarding({ user, onTeamCreated, onTeamJoined }) {
                       </button>
                     </div>
                     <p className="text-[11px] text-slate-400 font-mono mt-1.5 max-w-sm">
-                      Scan with Google Pay, PhonePe, Paytm, or BHIM. Pay <strong>₹600</strong>, then enter the 12-digit UTR below.
+                      Scan with Google Pay, PhonePe, Paytm, or BHIM. Pay <strong>₹800</strong>, then enter the 12-digit UTR below.
                     </p>
                   </div>
                 </div>
@@ -2172,7 +2172,7 @@ function TeamCard({ team, user, assignedTable, setTeams, onReload }) {
         </div>
         <div className="shrink-0 flex items-center gap-2">
           <span className="px-3 py-1 rounded-lg text-xs font-bold font-mono bg-black/40 border border-slate-700 text-slate-200">
-            ₹{team.payment?.amount || 600} Paid
+            ₹{team.payment?.amount || 800} Paid
           </span>
         </div>
       </div>

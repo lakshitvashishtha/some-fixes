@@ -256,7 +256,7 @@ async function getFullStore(forceRefresh = false) {
           status: t.payment_status,
           utr: t.payment_reference,
           reference: t.payment_reference,
-          amount: t.payment_amount || 600,
+          amount: t.payment_amount || 800,
           submittedAt: t.payment_submitted_at,
           verifiedAt: t.payment_verified_at
         },
@@ -436,7 +436,7 @@ async function saveFullStore(incoming) {
             t.status || 'forming',
             t.payment?.status || 'not_submitted',
             t.payment?.utr || t.payment?.reference || null,
-            t.payment?.amount || 600,
+            t.payment?.amount || 800,
             t.tableNumber || null,
             t.track || null,
             t.trackName || null

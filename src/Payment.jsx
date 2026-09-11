@@ -341,7 +341,7 @@ export default function Payment() {
               Scan the QR to pay the registration fee
             </p>
             <div className="mt-3 inline-block bg-[#0d0e15] border border-slate-800 px-4 py-1.5 rounded text-sm text-tactical font-bold">
-              ₹600.00
+              ₹800.00
             </div>
           </div>
 

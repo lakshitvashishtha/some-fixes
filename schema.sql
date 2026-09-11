@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS teams (
   status VARCHAR(20) NOT NULL DEFAULT 'forming', -- 'forming' | 'locked'
   payment_status VARCHAR(30) NOT NULL DEFAULT 'not_submitted', -- 'not_submitted' | 'under_review' | 'verified' | 'rejected'
   payment_reference VARCHAR(100) NULL,
-  payment_amount INT NOT NULL DEFAULT 600,
+  payment_amount INT NOT NULL DEFAULT 800,
   payment_submitted_at TIMESTAMP NULL,
   payment_verified_at TIMESTAMP NULL,
   table_number VARCHAR(20) NULL,
