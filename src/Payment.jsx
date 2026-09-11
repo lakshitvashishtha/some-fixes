@@ -122,10 +122,17 @@ export default function Payment() {
       .then((data) => {
         if (cancelled) return
         const teams = data.teams || []
-        // The leader's locked team is the one eligible for payment.
+        // The leader's team eligible for payment (including when re-submitting after rejection)
         const locked = teams.find(
-          (t) => t.isLeaderForThisTeam && t.status === 'locked',
-        )
+          (t) =>
+            t.isLeaderForThisTeam &&
+            (t.status === 'locked' ||
+              t.status === 'rejected' ||
+              t.status === 'registered' ||
+              t.payment?.status === 'rejected' ||
+              t.payment?.status === 'submitted' ||
+              t.payment?.status === 'verified'),
+        ) || teams.find((t) => t.isLeaderForThisTeam)
         setTeam(locked || null)
       })
       .catch(() => undefined)
@@ -331,6 +338,22 @@ export default function Payment() {
         <HomeLink />
         <div className="bg-[#0e111a] border border-slate-800 rounded-lg p-4 sm:p-8 shadow-2xl relative">
           <CornerBrackets />
+
+          {/* Rejection Alert Banner */}
+          {paymentStatus === 'rejected' && (
+            <div className="mb-5 p-3.5 rounded-lg bg-red-950/40 border border-red-500/50 text-xs font-mono text-red-200 leading-relaxed space-y-1.5">
+              <div className="font-bold flex items-center gap-1.5 text-red-400 text-xs">
+                <span>✕</span>
+                <span>PREVIOUS PAYMENT UTR REJECTED</span>
+              </div>
+              <div>
+                Rejection Reason: <strong className="text-red-300">{team.payment?.notes || 'Invalid transaction ID or payment not received.'}</strong>
+              </div>
+              <div className="text-[10px] text-slate-400">
+                Previous UTR: <span className="font-mono text-red-400 line-through font-bold">{team.payment?.utr || 'N/A'}</span>. Please verify your banking or UPI app and enter the correct 12-digit transaction ID below.
+              </div>
+            </div>
+          )}
 
           {/* Title & amount */}
           <div className="text-center mb-5">

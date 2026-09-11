@@ -1978,6 +1978,8 @@ async function handleFallback(path, options, err) {
 
     if (verified) {
       targetTeam.status = 'confirmed'
+    } else {
+      targetTeam.status = 'rejected'
     }
 
     saveRegisteredTeams(allTeams)
@@ -1993,7 +1995,8 @@ async function handleFallback(path, options, err) {
     return {
       success: true,
       team: targetTeam,
-      emailDispatched: {
+      isVerified: verified,
+      emailDispatched: verified ? {
         to: targetTeam.leader?.email,
         teamName: targetTeam.name,
         subject: `[CONFIRMED] Codefiesta 5.0 Official Pass Issued — ${targetTeam.name}`,
@@ -2001,7 +2004,7 @@ async function handleFallback(path, options, err) {
         utr: targetTeam.payment?.utr,
         amount: targetTeam.payment?.amount || 800,
         timestamp: new Date().toISOString(),
-      },
+      } : null,
     }
   }
 
@@ -2019,7 +2022,7 @@ async function handleFallback(path, options, err) {
     targetTeam.payment.verifiedAt = null
     targetTeam.payment.confirmationEmailDispatched = false
     targetTeam.payment.notes = 'Payment verification reverted by Admin'
-    targetTeam.status = 'registered'
+    targetTeam.status = 'locked'
 
     saveRegisteredTeams(allTeams)
     if (targetTeam.leader?.email) {
@@ -2248,6 +2251,8 @@ async function handleFallback(path, options, err) {
           inviteCode: m.inviteCode || '',
           utr: t.payment?.utr || 'NOT_SUBMITTED',
           paymentStatus: t.payment?.status || 'not_submitted',
+          paymentVerified: t.payment?.status === 'verified',
+          paymentNotes: t.payment?.notes || null,
           amount: t.payment?.amount || 800,
           submittedAt: t.payment?.submittedAt || t.createdAt || new Date().toISOString(),
           verifiedAt: t.payment?.verifiedAt || null,

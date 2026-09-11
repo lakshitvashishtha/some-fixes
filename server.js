@@ -1029,6 +1029,10 @@ app.post('/api/teams/:teamId/payment', apiLimiter, async (req, res) => {
       utr: cleanUtr,
       amount: team.payment?.amount || 800,
       submittedAt: new Date().toISOString(),
+      notes: null,
+    }
+    if (team.status === 'rejected') {
+      team.status = 'locked'
     }
 
     await saveFullStore({ teams: [team] }, false)
@@ -1048,15 +1052,21 @@ app.post(['/api/ops/admin-login', '/api/ops/verify-admin'], adminLimiter, (req, 
   }
 
   if (verifyPasskey(passkey)) {
-    recordAdminSuccess(clientIp)
-    return res.json({ success: true, token: 'vault_adm_' + crypto.randomBytes(16).toString('hex') })
-  } else {
-    recordAdminFailure(clientIp)
-    return res.status(403).json({ error: 'Access Denied: Invalid Master Passkey' })
+    recordAdminLoginSuccess(clientIp)
+    return res.json({ success: true, authorized: true, token: 'ops_session_valid' })
   }
+
+  const attemptsLeft = recordAdminLoginFailure(clientIp)
+  if (attemptsLeft <= 0) {
+    return res.status(429).json({ error: 'Security Lockout: Passkey attempts exceeded. IP locked for 15 minutes.' })
+  }
+  return res.status(401).json({
+    error: `Invalid passkey. Access Denied. Attempts remaining: ${attemptsLeft}`,
+    attemptsRemaining: attemptsLeft
+  })
 })
 
-// Ops: Registrations Ledger
+// Ops: Registrations with candidates ledger & UTR reconciliation
 app.get('/api/ops/registrations', adminLimiter, requireAdmin, async (req, res) => {
   try {
     const store = await getFullStore()
@@ -1089,6 +1099,7 @@ app.get('/api/ops/registrations', adminLimiter, requireAdmin, async (req, res) =
           utr: t.payment?.utr || t.payment?.reference || 'NOT_SUBMITTED',
           paymentStatus: t.payment?.status || 'not_submitted',
           paymentVerified: t.payment?.status === 'verified',
+          paymentNotes: t.payment?.notes || null,
           paymentReference: t.payment?.utr || t.payment?.reference || 'NOT_SUBMITTED',
           amount: t.payment?.amount || 800,
           submittedAt: t.payment?.submittedAt || t.createdAt || new Date().toISOString(),
@@ -1133,20 +1144,41 @@ app.post('/api/ops/reset-user-password', adminLimiter, requireAdmin, async (req,
 // Ops: Payment Verify & Revert
 app.post('/api/ops/verify-payment', adminLimiter, requireAdmin, async (req, res) => {
   try {
-    const { teamId } = req.body || {}
+    const { teamId, verified, notes } = req.body || {}
+    const isVerified = verified !== false
     const store = await getFullStore()
     const team = store.teams.find(t => t.id === teamId || t.code === teamId)
     if (!team) return res.status(404).json({ error: 'Team not found' })
 
-    team.payment = {
-      ...(team.payment || {}),
-      status: 'verified',
-      verifiedAt: new Date().toISOString()
+    if (isVerified) {
+      team.payment = {
+        ...(team.payment || {}),
+        status: 'verified',
+        verifiedAt: new Date().toISOString(),
+        notes: notes || 'UTR matched and authorized by Admin'
+      }
+      team.status = 'confirmed'
+    } else {
+      team.payment = {
+        ...(team.payment || {}),
+        status: 'rejected',
+        verifiedAt: null,
+        notes: notes || 'Invalid UTR rejected by admin'
+      }
+      team.status = 'rejected'
     }
-    team.status = 'ready'
 
     await saveFullStore({ teams: store.teams }, true)
-    res.json({ success: true, team })
+    res.json({
+      success: true,
+      team,
+      isVerified,
+      emailDispatched: isVerified ? {
+        to: team.leader?.email,
+        teamName: team.name,
+        subject: `[CONFIRMED] Codefiesta 5.0 Official Pass Issued — ${team.name}`
+      } : null
+    })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -1161,9 +1193,11 @@ app.post('/api/ops/revert-payment', adminLimiter, requireAdmin, async (req, res)
 
     team.payment = {
       ...(team.payment || {}),
-      status: 'under_review',
-      verifiedAt: null
+      status: 'submitted',
+      verifiedAt: null,
+      notes: 'Payment verification reverted by Admin'
     }
+    team.status = 'locked'
 
     await saveFullStore({ teams: store.teams }, true)
     res.json({ success: true, team })

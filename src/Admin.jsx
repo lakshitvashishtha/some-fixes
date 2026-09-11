@@ -79,6 +79,8 @@ export default function Admin() {
   const [doubleConfirmTeam, setDoubleConfirmTeam] = useState(null)
   const [doubleConfirmChecked, setDoubleConfirmChecked] = useState(false)
   const [revertConfirmTeam, setRevertConfirmTeam] = useState(null)
+  const [rejectConfirmTeam, setRejectConfirmTeam] = useState(null)
+  const [rejectReason, setRejectReason] = useState('')
 
   // Candidate Look Live Preview Modal
   const [previewCandidateData, setPreviewCandidateData] = useState(null)
@@ -521,17 +523,22 @@ Track: ${mentor.track || 'All Tracks'}`
     try {
       const res = await verifyTeamPaymentApi(teamId, verified, notes, ADMIN_VAULT_KEY)
       if (verified) {
-        setNotice(`✓ Payment verified! Official confirmation email dispatched to ${res.emailDispatched?.to} for team "${res.team?.name}" (UTR: ${res.team?.payment?.utr}).`)
+        setNotice(`✓ Payment verified! Official confirmation email dispatched to ${res.emailDispatched?.to || 'Leader'} for team "${res.team?.name || 'Squad'}" (UTR: ${res.team?.payment?.utr}).`)
       } else {
-        setNotice(`Payment marked as rejected for team "${res.team?.name}".`)
+        setNotice(`✕ Payment rejected for team "${res.team?.name || 'Squad'}". Dashboard access locked.`)
       }
       reloadState()
       setTimeout(() => setNotice(''), 4500)
     } catch (err) {
-      setNotice('Error verifying payment: ' + err.message)
+      setNotice('Error updating payment: ' + err.message)
     } finally {
       setVerifyingTeamId(null)
     }
+  }
+
+  const handleInitiateRejectPayment = (candidate) => {
+    setRejectConfirmTeam(candidate)
+    setRejectReason('Invalid UTR / Transaction not found in bank records')
   }
 
   // Payment Verification Double-Confirmation Handlers
@@ -829,10 +836,19 @@ Track: ${mentor.track || 'All Tracks'}`
         c.status === 'confirmed' ||
         c.role === 'leader'
 
+      const isVerified = c.paymentStatus === 'verified' || c.paymentVerified || c.team?.payment?.status === 'verified'
+      const isRejected = !isVerified && (c.paymentStatus === 'rejected' || c.team?.payment?.status === 'rejected')
+      const isSubmitted = !isVerified && !isRejected && (
+        c.paymentStatus === 'submitted' ||
+        c.team?.payment?.status === 'submitted' ||
+        ((c.utr && c.utr !== 'NOT_SUBMITTED') || (c.paymentReference && c.paymentReference !== 'NOT_SUBMITTED' && c.paymentReference !== 'N/A') || (c.team?.payment?.utr && c.team?.payment?.utr !== 'NOT_SUBMITTED'))
+      )
+
       let matchFilter = true
-      if (regFilter === 'verified') matchFilter = c.paymentStatus === 'verified'
-      if (regFilter === 'pending') matchFilter = c.paymentStatus === 'submitted'
-      if (regFilter === 'unpaid') matchFilter = c.paymentStatus === 'not_submitted'
+      if (regFilter === 'verified') matchFilter = isVerified
+      if (regFilter === 'pending') matchFilter = isSubmitted
+      if (regFilter === 'rejected') matchFilter = isRejected
+      if (regFilter === 'unpaid') matchFilter = !isVerified && !isSubmitted && !isRejected
       if (regFilter === 'confirmed') matchFilter = isMemberConfirmed
       if (regFilter === 'pending_invite') matchFilter = !isMemberConfirmed
 
@@ -1007,15 +1023,15 @@ Track: ${mentor.track || 'All Tracks'}`
             </div>
 
             {/* Stat Counters */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3.5">
-              <div className="p-4 rounded-lg bg-[#0e1220] border border-slate-800">
+            <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+              <div className="p-3.5 rounded-lg bg-[#0e1220] border border-slate-800">
                 <span className="text-[10px] font-mono text-slate-400 uppercase block">Total Candidates</span>
                 <span className="font-arcade text-2xl text-white mt-1 block">
                   {candidatesLedger.length}
                 </span>
                 <span className="text-[9px] text-slate-500 font-mono">Enrolled across all teams</span>
               </div>
-              <div className="p-4 rounded-lg bg-[#0e1220] border border-emerald-500/30 shadow-[0_0_12px_rgba(16,185,129,0.08)]">
+              <div className="p-3.5 rounded-lg bg-[#0e1220] border border-emerald-500/30 shadow-[0_0_12px_rgba(16,185,129,0.08)]">
                 <span className="text-[10px] font-mono text-emerald-400 uppercase block">Confirmed &amp; Joined</span>
                 <span className="font-arcade text-2xl text-emerald-400 mt-1 block">
                   {
@@ -1030,26 +1046,40 @@ Track: ${mentor.track || 'All Tracks'}`
                 </span>
                 <span className="text-[9px] text-emerald-500/70 font-mono">Accepted &amp; on-deck</span>
               </div>
-              <div className="p-4 rounded-lg bg-[#0e1220] border border-slate-800">
+              <div className="p-3.5 rounded-lg bg-[#0e1220] border border-slate-800">
                 <span className="text-[10px] font-mono text-slate-400 uppercase block">Total Squads</span>
                 <span className="font-arcade text-2xl text-cyan-400 mt-1 block">
                   {new Set(candidatesLedger.map((c) => c.teamId)).size}
                 </span>
                 <span className="text-[9px] text-slate-500 font-mono">Registered teams</span>
               </div>
-              <div className="p-4 rounded-lg bg-[#0e1220] border border-emerald-500/30">
+              <div className="p-3.5 rounded-lg bg-[#0e1220] border border-emerald-500/30">
                 <span className="text-[10px] font-mono text-emerald-400 uppercase block">Verified &amp; Paid</span>
                 <span className="font-arcade text-2xl text-emerald-400 mt-1 block">
                   {new Set(candidatesLedger.filter((c) => c.paymentStatus === 'verified' || c.paymentVerified || c.team?.payment?.status === 'verified').map((c) => c.teamId)).size}
                 </span>
                 <span className="text-[9px] text-emerald-500/70 font-mono">Passes issued &amp; emailed</span>
               </div>
-              <div className="p-4 rounded-lg bg-[#14121a] border border-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.1)]">
-                <span className="text-[10px] font-mono text-amber-400 uppercase block">Pending Bank Match</span>
+              <div className="p-3.5 rounded-lg bg-[#14121a] border border-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.1)]">
+                <span className="text-[10px] font-mono text-amber-400 uppercase block">Pending Match</span>
                 <span className="font-arcade text-2xl text-amber-400 mt-1 block">
-                  {new Set(candidatesLedger.filter((c) => (c.paymentStatus === 'submitted' || c.team?.payment?.status === 'submitted' || (!c.paymentVerified && ((c.utr && c.utr !== 'NOT_SUBMITTED') || (c.paymentReference && c.paymentReference !== 'NOT_SUBMITTED' && c.paymentReference !== 'N/A'))))).map((c) => c.teamId)).size}
+                  {new Set(candidatesLedger.filter((c) => {
+                    const isVer = c.paymentStatus === 'verified' || c.paymentVerified || c.team?.payment?.status === 'verified'
+                    const isRej = !isVer && (c.paymentStatus === 'rejected' || c.team?.payment?.status === 'rejected')
+                    return !isVer && !isRej && (c.paymentStatus === 'submitted' || c.team?.payment?.status === 'submitted' || ((c.utr && c.utr !== 'NOT_SUBMITTED') || (c.paymentReference && c.paymentReference !== 'NOT_SUBMITTED' && c.paymentReference !== 'N/A')))
+                  }).map((c) => c.teamId)).size}
                 </span>
                 <span className="text-[9px] text-amber-500/70 font-mono">Awaiting UTR match</span>
+              </div>
+              <div className="p-3.5 rounded-lg bg-[#160e12] border border-red-500/40 shadow-[0_0_15px_rgba(239,68,68,0.1)]">
+                <span className="text-[10px] font-mono text-red-400 uppercase block">✕ Rejected</span>
+                <span className="font-arcade text-2xl text-red-400 mt-1 block">
+                  {new Set(candidatesLedger.filter((c) => {
+                    const isVer = c.paymentStatus === 'verified' || c.paymentVerified || c.team?.payment?.status === 'verified'
+                    return !isVer && (c.paymentStatus === 'rejected' || c.team?.payment?.status === 'rejected')
+                  }).map((c) => c.teamId)).size}
+                </span>
+                <span className="text-[9px] text-red-400/70 font-mono">Invalid UTR / locked</span>
               </div>
             </div>
 
@@ -1074,6 +1104,7 @@ Track: ${mentor.track || 'All Tracks'}`
                   { id: 'pending_invite', label: '⏳ Pending Invites' },
                   { id: 'pending', label: 'Pending UTR' },
                   { id: 'verified', label: 'Verified' },
+                  { id: 'rejected', label: '✕ Rejected' },
                   { id: 'unpaid', label: 'Unpaid' },
                 ].map((flt) => (
                   <button
@@ -1119,14 +1150,15 @@ Track: ${mentor.track || 'All Tracks'}`
                   ) : (
                     filteredCandidates.map((c, idx) => {
                       const isVerified = c.paymentStatus === 'verified' || c.paymentVerified || c.team?.payment?.status === 'verified'
-                      const isSubmitted = c.paymentStatus === 'submitted' || c.team?.payment?.status === 'submitted' || (!isVerified && ((c.utr && c.utr !== 'NOT_SUBMITTED') || (c.paymentReference && c.paymentReference !== 'NOT_SUBMITTED' && c.paymentReference !== 'N/A') || (c.team?.payment?.utr && c.team?.payment?.utr !== 'NOT_SUBMITTED')))
+                      const isRejected = !isVerified && (c.paymentStatus === 'rejected' || c.team?.payment?.status === 'rejected')
+                      const isSubmitted = !isVerified && !isRejected && (c.paymentStatus === 'submitted' || c.team?.payment?.status === 'submitted' || ((c.utr && c.utr !== 'NOT_SUBMITTED') || (c.paymentReference && c.paymentReference !== 'NOT_SUBMITTED' && c.paymentReference !== 'N/A') || (c.team?.payment?.utr && c.team?.payment?.utr !== 'NOT_SUBMITTED')))
                       const isLeader = c.role === 'leader'
 
                       return (
                         <tr
                           key={`${c.teamId}-${c.email}-${idx}`}
                           className={`hover:bg-[#111628] transition ${
-                            isSubmitted ? 'bg-amber-500/[0.03]' : ''
+                            isRejected ? 'bg-red-500/[0.04]' : isSubmitted ? 'bg-amber-500/[0.03]' : ''
                           }`}
                         >
                           {/* Row Index */}
@@ -1257,6 +1289,8 @@ Track: ${mentor.track || 'All Tracks'}`
                                 <span className={`px-2 py-1 rounded font-mono text-xs font-bold ${
                                   isVerified
                                     ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
+                                    : isRejected
+                                    ? 'bg-red-500/20 text-red-300 border border-red-500/50 line-through'
                                     : 'bg-amber-500/20 text-amber-300 border border-amber-500 font-bold animate-pulse'
                                 }`}>
                                   {c.utr || c.paymentReference || c.team?.payment?.utr}
@@ -1333,7 +1367,7 @@ Track: ${mentor.track || 'All Tracks'}`
                             ) : (
                               <div className="flex items-center gap-2">
                                 {((hackState?.tableAssignments || {})[c.teamId] || c.tableNumber) ? (
-                                  <span className="px-2 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/40 text-cyan-300 font-mono text-[10px] font-bold">
+                                  <span className="px-2 py-0.5 rounded bg-tactical/20 border border-tactical/60 text-tactical font-mono text-xs font-bold shadow-[0_0_8px_rgba(255,184,0,0.15)]">
                                     {(hackState?.tableAssignments || {})[c.teamId] || c.tableNumber}
                                   </span>
                                 ) : (
@@ -1386,6 +1420,28 @@ Track: ${mentor.track || 'All Tracks'}`
                                   </button>
                                 </div>
                               </div>
+                            ) : isRejected ? (
+                              <div className="space-y-1.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="px-2 py-0.5 rounded bg-red-500/20 border border-red-500 text-red-300 font-arcade text-[9px] flex items-center gap-1">
+                                    <span>✕</span>
+                                    <span>PAYMENT REJECTED</span>
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleInitiateVerifyPayment(c)}
+                                    disabled={verifyingTeamId === c.teamId}
+                                    className="px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/50 text-emerald-300 font-arcade text-[8px] uppercase transition flex items-center gap-1"
+                                    title="Re-evaluate and approve payment if previously rejected"
+                                  >
+                                    <span>✓</span>
+                                    <span>Re-evaluate / Approve</span>
+                                  </button>
+                                </div>
+                                <div className="text-[9px] text-red-400/80 font-mono truncate max-w-[200px]" title={c.paymentNotes || c.team?.payment?.notes || 'Invalid UTR rejected by admin'}>
+                                  Reason: {c.paymentNotes || c.team?.payment?.notes || 'Invalid UTR rejected by admin'}
+                                </div>
+                              </div>
                             ) : isSubmitted ? (
                               <div className="flex items-center gap-2">
                                 <button
@@ -1405,7 +1461,7 @@ Track: ${mentor.track || 'All Tracks'}`
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleVerifyPayment(c.teamId, false, 'Invalid UTR rejected by admin')}
+                                  onClick={() => handleInitiateRejectPayment(c)}
                                   disabled={verifyingTeamId === c.teamId}
                                   className="px-2 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 border border-red-500/40 text-red-400 font-arcade text-[9px] uppercase transition"
                                 >
@@ -3073,6 +3129,87 @@ Track: ${mentor.track || 'All Tracks'}`
                 className="px-5 py-2.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-arcade text-[10px] font-bold transition shadow-lg shadow-red-600/30"
               >
                 YES, REVERT TO PENDING
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 2.5: REJECT PAYMENT CONFIRMATION                                    */}
+      {/* ========================================================================= */}
+      {rejectConfirmTeam && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md bg-[#0b0e18] border-2 border-red-500 rounded-2xl p-6 shadow-2xl shadow-red-500/20 space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-800 pb-3">
+              <div>
+                <span className="px-2 py-0.5 rounded bg-red-500/20 border border-red-500/50 text-red-400 font-arcade text-[9px] font-bold">
+                  FINANCE REJECTION
+                </span>
+                <h3 className="font-arcade text-base text-white mt-1">REJECT PAYMENT UTR?</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRejectConfirmTeam(null)}
+                className="text-slate-500 hover:text-white text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-4 rounded-xl bg-[#111422] border border-slate-800 space-y-2 font-mono text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Squad Name:</span>
+                <span className="text-white font-bold">{rejectConfirmTeam.teamName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Leader:</span>
+                <span className="text-slate-300">{rejectConfirmTeam.candidateName} ({rejectConfirmTeam.email})</span>
+              </div>
+              <div className="flex justify-between items-center pt-2 border-t border-slate-800/80">
+                <span className="text-slate-500">Submitted UTR:</span>
+                <span className="px-2 py-0.5 rounded bg-black border border-red-900/60 text-red-400 font-mono font-bold text-xs">
+                  {rejectConfirmTeam.paymentReference || rejectConfirmTeam.utr || 'NOT GIVEN'}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 font-mono text-xs">
+              <label className="text-slate-400 text-[11px] block font-medium">
+                Rejection Reason (Visible on Squad Dashboard):
+              </label>
+              <input
+                type="text"
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="e.g. Transaction not found in bank statement"
+                className="w-full rounded-lg bg-[#161a28] border border-red-500/50 px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-red-400"
+              />
+            </div>
+
+            <div className="p-3 rounded-lg bg-red-950/30 border border-red-900/50 text-[11px] font-mono text-red-300 leading-relaxed">
+              ⚠️ Rejecting this payment will immediately lock squad dashboard access, revoke passes, and prompt the squad leader to re-submit a valid UTR transaction reference.
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setRejectConfirmTeam(null)}
+                className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-arcade text-[10px]"
+              >
+                CANCEL
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const candidate = rejectConfirmTeam
+                  const reason = rejectReason.trim() || 'Invalid UTR rejected by admin'
+                  setRejectConfirmTeam(null)
+                  await handleVerifyPayment(candidate.teamId, false, reason)
+                }}
+                className="px-5 py-2.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-arcade text-[10px] font-bold transition shadow-lg shadow-red-600/30"
+              >
+                CONFIRM REJECTION &gt;&gt;
               </button>
             </div>
           </div>

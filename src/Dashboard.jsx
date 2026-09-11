@@ -743,6 +743,9 @@ function VerificationPendingScreen({ user, team, onRefresh, onLogout }) {
   const [checking, setChecking] = useState(false)
   const [copiedUtr, setCopiedUtr] = useState(false)
 
+  const isRejected = team?.payment?.status === 'rejected' || team?.status === 'rejected'
+  const isLeader = team?.leader?.email === user?.email || user?.isLeader || team?.isLeaderForThisTeam || false
+
   // Real-time synchronization: poll verification state every 4 seconds only when active
   useEffect(() => {
     const interval = setInterval(() => {
@@ -796,7 +799,9 @@ function VerificationPendingScreen({ user, team, onRefresh, onLogout }) {
         <div className="flex items-center gap-3">
           <div className="text-right hidden sm:block">
             <div className="text-xs text-white font-medium">{user.name || user.email}</div>
-            <div className="text-[9px] text-amber-400 font-mono">Payment Under Verification</div>
+            <div className={`text-[9px] font-mono ${isRejected ? 'text-red-400 font-bold' : 'text-amber-400'}`}>
+              {isRejected ? '✕ Payment Rejected by Admin' : '⏳ Payment Under Verification'}
+            </div>
           </div>
           <button
             type="button"
@@ -810,28 +815,40 @@ function VerificationPendingScreen({ user, team, onRefresh, onLogout }) {
 
       {/* Center Command Card */}
       <main className="max-w-4xl mx-auto w-full p-4 sm:p-8 space-y-6 relative z-10 my-auto">
-        <div className="bg-[#0b0e1a]/95 border border-amber-500/50 rounded-2xl p-6 sm:p-10 shadow-[0_0_50px_rgba(245,158,11,0.12)] relative space-y-6">
+        <div className={`bg-[#0b0e1a]/95 border rounded-2xl p-6 sm:p-10 relative space-y-6 ${
+          isRejected
+            ? 'border-red-500/60 shadow-[0_0_50px_rgba(239,68,68,0.18)]'
+            : 'border-amber-500/50 shadow-[0_0_50px_rgba(245,158,11,0.12)]'
+        }`}>
           {/* Corner brackets */}
-          <div className="absolute top-3 left-3 w-3 h-3 border-t-2 border-l-2 border-amber-500" />
-          <div className="absolute top-3 right-3 w-3 h-3 border-t-2 border-r-2 border-amber-500" />
-          <div className="absolute bottom-3 left-3 w-3 h-3 border-b-2 border-l-2 border-amber-500" />
-          <div className="absolute bottom-3 right-3 w-3 h-3 border-b-2 border-r-2 border-amber-500" />
+          <div className={`absolute top-3 left-3 w-3 h-3 border-t-2 border-l-2 ${isRejected ? 'border-red-500' : 'border-amber-500'}`} />
+          <div className={`absolute top-3 right-3 w-3 h-3 border-t-2 border-r-2 ${isRejected ? 'border-red-500' : 'border-amber-500'}`} />
+          <div className={`absolute bottom-3 left-3 w-3 h-3 border-b-2 border-l-2 ${isRejected ? 'border-red-500' : 'border-amber-500'}`} />
+          <div className={`absolute bottom-3 right-3 w-3 h-3 border-b-2 border-r-2 ${isRejected ? 'border-red-500' : 'border-amber-500'}`} />
 
           {/* Header Status */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
             <div className="flex items-start sm:items-center gap-3.5">
-              <div className="w-12 h-12 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-400 text-2xl flex items-center justify-center shrink-0 shadow-inner animate-pulse">
-                ⏳
+              <div className={`w-12 h-12 rounded-xl text-2xl flex items-center justify-center shrink-0 shadow-inner ${
+                isRejected
+                  ? 'bg-red-500/15 border border-red-500/50 text-red-400'
+                  : 'bg-amber-500/15 border border-amber-500/40 text-amber-400 animate-pulse'
+              }`}>
+                {isRejected ? '✕' : '⏳'}
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-                  <span className="font-mono text-xs text-amber-400 font-bold uppercase tracking-wider">
-                    REGISTRATION SUBMITTED // AWAITING ADMIN UTR VERIFICATION
+                  <span className={`w-2 h-2 rounded-full ${isRejected ? 'bg-red-500' : 'bg-amber-400 animate-ping'}`} />
+                  <span className={`font-mono text-xs font-bold uppercase tracking-wider ${isRejected ? 'text-red-400' : 'text-amber-400'}`}>
+                    {isRejected
+                      ? 'REGISTRATION REJECTED // PAYMENT NOT RECONCILED'
+                      : 'REGISTRATION SUBMITTED // AWAITING ADMIN UTR VERIFICATION'}
                   </span>
                 </div>
                 <h1 className="text-lg sm:text-xl font-bold font-sans text-white mt-1">
-                  Dashboard Access Locked Until Payment Reconciliation
+                  {isRejected
+                    ? 'Payment Verification Failed — Action Required'
+                    : 'Dashboard Access Locked Until Payment Reconciliation'}
                 </h1>
               </div>
             </div>
@@ -850,18 +867,51 @@ function VerificationPendingScreen({ user, team, onRefresh, onLogout }) {
           </div>
 
           {/* Verification Protocol Notice */}
-          <div className="p-4 rounded-xl bg-[#14121a] border border-amber-500/30 text-xs font-mono text-amber-200/90 leading-relaxed space-y-2">
-            <div className="font-bold flex items-center gap-2 text-amber-300">
-              <span>🛡️</span>
-              <span>FINANCE VERIFICATION PROTOCOL IN PROGRESS</span>
+          {isRejected ? (
+            <div className="p-4 rounded-xl bg-[#1c0e14] border border-red-500/50 text-xs font-mono text-red-200/90 leading-relaxed space-y-2.5">
+              <div className="font-bold flex items-center gap-2 text-red-400 text-sm">
+                <span>✕</span>
+                <span>FINANCE VERIFICATION FAILED: PAYMENT REJECTED</span>
+              </div>
+              <p className="text-slate-200 text-xs">
+                Admin Rejection Note: <strong className="text-red-300">{team.payment?.notes || 'UTR reference could not be matched against bank statement credit.'}</strong>
+              </p>
+              <p className="text-slate-400 text-[11px]">
+                The submitted transaction UTR <span className="font-mono text-red-400 line-through font-bold">{team.payment?.utr || 'N/A'}</span> was evaluated by the Codefiesta 5.0 Finance Desk and rejected. Dashboard features, event passes, and problem statements remain locked.
+              </p>
+              {isLeader ? (
+                <div className="pt-2 flex flex-col sm:flex-row sm:items-center gap-3">
+                  <Link
+                    to="/payment"
+                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-sans font-bold text-xs uppercase tracking-wider transition shadow-lg shadow-red-600/30"
+                  >
+                    <span>←</span>
+                    <span>Re-submit Correct UTR at Payment Gate</span>
+                  </Link>
+                  <span className="text-[10px] text-slate-400">
+                    Verify in your UPI app and submit the correct 12-digit transaction reference.
+                  </span>
+                </div>
+              ) : (
+                <p className="text-amber-300 text-[11px] pt-1">
+                  Please inform your squad leader (<strong className="text-white">{team.leader?.name || team.leader?.email}</strong>) to re-submit the payment transaction ID.
+                </p>
+              )}
             </div>
-            <p className="text-slate-300 text-[11px]">
-              Your registration details for squad <strong className="text-white">{team.name}</strong> and UPI UTR transaction reference <strong className="text-tactical font-mono">{team.payment?.utr}</strong> have been submitted to the Codefiesta 5.0 Command Desk.
-            </p>
-            <p className="text-slate-400 text-[11px]">
-              Our on-ground finance coordinators are currently reconciling your transaction ID against official bank records. As soon as matched, an official confirmation email will be dispatched to <strong className="text-cyan-400">{team.leader?.email}</strong> and full dashboard access, event passes, and problem statements will unlock automatically.
-            </p>
-          </div>
+          ) : (
+            <div className="p-4 rounded-xl bg-[#14121a] border border-amber-500/30 text-xs font-mono text-amber-200/90 leading-relaxed space-y-2">
+              <div className="font-bold flex items-center gap-2 text-amber-300">
+                <span>🛡️</span>
+                <span>FINANCE VERIFICATION PROTOCOL IN PROGRESS</span>
+              </div>
+              <p className="text-slate-300 text-[11px]">
+                Your registration details for squad <strong className="text-white">{team.name}</strong> and UPI UTR transaction reference <strong className="text-tactical font-mono">{team.payment?.utr}</strong> have been submitted to the Codefiesta 5.0 Command Desk.
+              </p>
+              <p className="text-slate-400 text-[11px]">
+                Our on-ground finance coordinators are currently reconciling your transaction ID against official bank records. As soon as matched, an official confirmation email will be dispatched to <strong className="text-cyan-400">{team.leader?.email}</strong> and full dashboard access, event passes, and problem statements will unlock automatically.
+              </p>
+            </div>
+          )}
 
           {/* Submitted Squad Details Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -880,9 +930,18 @@ function VerificationPendingScreen({ user, team, onRefresh, onLogout }) {
               <div className="flex items-center justify-between text-xs border-b border-slate-800/60 pb-2">
                 <span className="text-slate-400">Submitted UTR:</span>
                 <div className="inline-flex items-center gap-1.5">
-                  <span className="font-mono text-tactical font-bold bg-tactical/10 px-2 py-0.5 rounded border border-tactical/30">
+                  <span className={`font-mono font-bold px-2 py-0.5 rounded border ${
+                    isRejected
+                      ? 'text-red-400 bg-red-500/10 border-red-500/30 line-through'
+                      : 'text-tactical bg-tactical/10 border-tactical/30'
+                  }`}>
                     {team.payment?.utr || 'NOT_SUBMITTED'}
                   </span>
+                  {isRejected && (
+                    <span className="text-[9px] font-arcade text-red-400 bg-red-500/20 px-1.5 py-0.5 rounded border border-red-500/40">
+                      REJECTED
+                    </span>
+                  )}
                   {team.payment?.utr && (
                     <button
                       type="button"
