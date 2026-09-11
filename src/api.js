@@ -737,12 +737,20 @@ async function handleFallback(path, options, err) {
       if (rawAllUsers) {
         const allUsers = JSON.parse(rawAllUsers)
         if (Array.isArray(allUsers)) {
-          matchedUser = allUsers.find(
-            (u) => u.email && u.email.toLowerCase() === loginEmail && (!u.password || u.password === loginPassword)
+          const found = allUsers.find(
+            (u) => u.email && u.email.toLowerCase() === loginEmail
           )
+          if (found) {
+            if (found.password && found.password !== loginPassword) {
+              throw new Error('Invalid password. Please check your credentials.')
+            }
+            matchedUser = found
+          }
         }
       }
-    } catch {}
+    } catch (e) {
+      if (e.message?.includes('Invalid password')) throw e
+    }
 
     // 2. Also check currently stored auth user
     if (!matchedUser) {
@@ -750,11 +758,16 @@ async function handleFallback(path, options, err) {
         const raw = localStorage.getItem('cf_auth_user')
         if (raw) {
           const stored = JSON.parse(raw)
-          if (stored.email?.toLowerCase() === loginEmail && (!stored.password || stored.password === loginPassword)) {
+          if (stored.email?.toLowerCase() === loginEmail) {
+            if (stored.password && stored.password !== loginPassword) {
+              throw new Error('Invalid password. Please check your credentials.')
+            }
             matchedUser = stored
           }
         }
-      } catch {}
+      } catch (e) {
+        if (e.message?.includes('Invalid password')) throw e
+      }
     }
 
     // 3. Fallback: Check if this user is a registered team leader or squad member
@@ -762,6 +775,9 @@ async function handleFallback(path, options, err) {
       const allTeams = getAllRegisteredTeams()
       for (const t of allTeams) {
         if (t.leader?.email && t.leader.email.toLowerCase() === loginEmail) {
+          if (t.leader.password && t.leader.password !== loginPassword) {
+            throw new Error('Invalid password. Please check your credentials.')
+          }
           matchedUser = {
             id: 'usr_' + Math.random().toString(36).slice(2, 9),
             email: t.leader.email.toLowerCase(),
@@ -774,12 +790,15 @@ async function handleFallback(path, options, err) {
             course: t.leader.course || '',
             year: t.leader.year || '',
             gender: t.leader.gender || '',
-            password: loginPassword,
+            password: t.leader.password || loginPassword,
           }
           break
         }
         const memberMatch = (t.members || []).find((m) => m.email && m.email.toLowerCase() === loginEmail)
         if (memberMatch) {
+          if (memberMatch.password && memberMatch.password !== loginPassword) {
+            throw new Error('Invalid password. Please check your credentials.')
+          }
           matchedUser = {
             id: memberMatch.id || 'usr_' + Math.random().toString(36).slice(2, 9),
             email: memberMatch.email.toLowerCase(),
@@ -792,7 +811,7 @@ async function handleFallback(path, options, err) {
             course: memberMatch.course || '',
             year: memberMatch.year || '',
             gender: memberMatch.gender || '',
-            password: loginPassword,
+            password: memberMatch.password || loginPassword,
           }
           break
         }
@@ -2548,16 +2567,26 @@ async function request(path, options = {}) {
         headers,
       })
       const contentType = res.headers.get('content-type') || ''
-      if (res.ok && contentType.includes('application/json')) {
-        const data = await res.json()
-        if ((path === '/api/auth/login' || path === '/api/auth/register') && data.user) {
-          try {
-            localStorage.setItem('cf_auth_user', JSON.stringify(data.user))
-          } catch {}
+      if (contentType.includes('application/json')) {
+        const data = await res.json().catch(() => null)
+        if (res.ok) {
+          if ((path === '/api/auth/login' || path === '/api/auth/register') && data?.user) {
+            try {
+              localStorage.setItem('cf_auth_user', JSON.stringify(data.user))
+              localStorage.removeItem('cf_logged_out')
+            } catch {}
+          }
+          return data
+        } else if (res.status === 400 || res.status === 401 || res.status === 403 || res.status === 429) {
+          // Intentional rejection from backend (invalid password, bad email, lockout, etc.)
+          throw new Error(data?.error || `Request failed with status ${res.status}`)
         }
-        return data
       }
-    } catch {}
+    } catch (err) {
+      if (err.message && !err.message.includes('Failed to fetch') && !err.message.includes('NetworkError') && !err.message.includes('Load failed')) {
+        throw err
+      }
+    }
   }
 
   // Fallback to local storage & shared database

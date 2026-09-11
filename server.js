@@ -501,8 +501,9 @@ async function saveFullStore(incoming, isAdmin = false) {
         await pool.query('DELETE FROM users')
       }
 
-      // Sync users
-      for (const u of mergedUsers) {
+      // Sync users (only sync modified delta when not wiping)
+      const usersToSync = wipe ? mergedUsers : (Array.isArray(incoming.users) ? incoming.users : [])
+      for (const u of usersToSync) {
         if (!u.email) continue
         await pool.query(
           `INSERT INTO users (id, email, password, first_name, last_name, phone, college, roll_number, course, year, gender)
@@ -530,8 +531,9 @@ async function saveFullStore(incoming, isAdmin = false) {
         )
       }
 
-      // Sync teams & members
-      for (const t of mergedTeams) {
+      // Sync teams & members (only sync modified delta when not wiping)
+      const teamsToSync = wipe ? mergedTeams : (Array.isArray(incoming.teams) ? incoming.teams : [])
+      for (const t of teamsToSync) {
         if (!t.id) continue
         await pool.query(
           `INSERT INTO teams (id, name, code, leader_email, size, status, payment_status, payment_reference, payment_amount, table_number, track, track_name)
@@ -541,6 +543,7 @@ async function saveFullStore(incoming, isAdmin = false) {
              status = VALUES(status),
              payment_status = VALUES(payment_status),
              payment_reference = VALUES(payment_reference),
+             payment_amount = VALUES(payment_amount),
              table_number = VALUES(table_number),
              track = VALUES(track),
              track_name = VALUES(track_name)`,
@@ -548,7 +551,7 @@ async function saveFullStore(incoming, isAdmin = false) {
             t.id,
             t.name,
             t.code || ('CF5' + Math.random().toString(36).slice(2, 6).toUpperCase()),
-            t.leader?.email || t.leaderEmail || 'leader@codefiesta.in',
+            t.leader?.email || t.leaderEmail || t.leader_email || 'leader@codefiesta.in',
             t.size || 3,
             t.status || 'forming',
             t.payment?.status || 'not_submitted',
@@ -596,8 +599,8 @@ async function saveFullStore(incoming, isAdmin = false) {
         }
       }
 
-      // Save opsState key-values
-      if (mergedOpsState) {
+      // Save opsState key-values (only if wiping or opsState explicitly provided)
+      if (mergedOpsState && (wipe || incoming.opsState)) {
         for (const [k, v] of Object.entries(mergedOpsState)) {
           await pool.query(
             `INSERT INTO ops_state (state_key, state_val) VALUES (?, ?)
@@ -607,7 +610,7 @@ async function saveFullStore(incoming, isAdmin = false) {
         }
       }
 
-      if (problemStatements) {
+      if (problemStatements && (wipe || incoming.problemStatements)) {
         await pool.query(
           `INSERT INTO ops_state (state_key, state_val) VALUES ('problem_statements_json', ?)
            ON DUPLICATE KEY UPDATE state_val = VALUES(state_val)`,
@@ -720,28 +723,90 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
   }
 })
 
+const safeErrorResponse = (res, err, fallbackMsg = 'An unexpected server error occurred.') => {
+  console.error('[API Error]:', err?.message || err)
+  const isDev = process.env.NODE_ENV === 'development'
+  res.status(500).json({ error: isDev ? (err?.message || fallbackMsg) : fallbackMsg })
+}
+
 // Auth: Login (Protected by auth rate limiter)
 app.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body || {}
     const cleanEmail = (email || '').toLowerCase().trim()
+    if (!cleanEmail) {
+      return res.status(400).json({ error: 'Email address is required.' })
+    }
+    if (!password) {
+      return res.status(400).json({ error: 'Password is required.' })
+    }
+
     const store = await getFullStore()
-    const user = store.users.find(
+    let user = store.users.find(
       u => u.email.toLowerCase() === cleanEmail
     )
 
+    // If user not in store.users, check if registered as leader or teammate in any team
     if (!user) {
-      return res.status(401).json({ error: 'No account registered with this email.' })
+      for (const t of store.teams || []) {
+        if ((t.leader_email || '').toLowerCase() === cleanEmail || (t.leader?.email || '').toLowerCase() === cleanEmail) {
+          user = {
+            id: t.leader?.id || ('usr_' + t.id),
+            email: cleanEmail,
+            firstName: t.leader?.firstName || t.leader?.name?.split(' ')[0] || '',
+            lastName: t.leader?.lastName || t.leader?.name?.split(' ').slice(1).join(' ') || '',
+            phone: t.leader?.phone || '',
+            college: t.leader?.college || '',
+            rollNumber: t.leader?.rollNumber || '',
+            course: t.leader?.course || 'CSE',
+            year: t.leader?.year || '1st',
+            gender: t.leader?.gender || 'male',
+            password: t.leader?.password || password,
+            registeredAt: t.createdAt || new Date().toISOString()
+          }
+          break
+        }
+        const member = (t.members || []).find(m => (m.email || '').toLowerCase() === cleanEmail)
+        if (member) {
+          user = {
+            id: member.id || ('usr_' + t.id),
+            email: cleanEmail,
+            firstName: member.firstName || member.name?.split(' ')[0] || '',
+            lastName: member.lastName || member.name?.split(' ').slice(1).join(' ') || '',
+            phone: member.phone || '',
+            college: member.college || '',
+            rollNumber: member.rollNumber || '',
+            course: member.course || 'CSE',
+            year: member.year || '1st',
+            gender: member.gender || 'male',
+            password: member.password || password,
+            registeredAt: new Date().toISOString()
+          }
+          break
+        }
+      }
     }
-    if (!user.password || user.password !== password) {
+
+    if (!user) {
+      return res.status(401).json({ error: 'No account registered with this email. Please check credentials or register first.' })
+    }
+
+    // Strictly verify password if one was set
+    if (user.password && user.password !== password) {
       return res.status(401).json({ error: 'Invalid password. Please check your credentials.' })
+    }
+
+    // First-time teammate login: initialize their password
+    if (!user.password) {
+      user.password = password
+      await saveFullStore({ users: [user] }, false)
     }
 
     const safeUser = { ...user }
     delete safeUser.password
     res.json({ success: true, user: safeUser })
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    safeErrorResponse(res, err)
   }
 })
 
@@ -753,7 +818,7 @@ app.post('/api/auth/check-email', authLimiter, async (req, res) => {
     const exists = store.users.some(u => u.email.toLowerCase() === (email || '').toLowerCase().trim())
     res.json({ exists })
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    safeErrorResponse(res, err)
   }
 })
 
@@ -764,7 +829,7 @@ app.post('/api/auth/request-password-reset', authLimiter, async (req, res) => {
     console.log(`[PASSWORD RESET REQUEST] for candidate: ${email}`)
     res.json({ success: true, message: 'Reset request queued for Admin verification.' })
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    safeErrorResponse(res, err)
   }
 })
 
@@ -782,7 +847,7 @@ app.get('/api/teams/all', apiLimiter, async (req, res) => {
     res.setHeader('Cache-Control', 'private, no-cache')
     res.json({ success: true, teams: store.teams || [] })
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    safeErrorResponse(res, err)
   }
 })
 
@@ -802,7 +867,140 @@ app.get('/api/teams/my', apiLimiter, async (req, res) => {
     )
     res.json({ success: true, teams: myTeams })
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    safeErrorResponse(res, err)
+  }
+})
+
+// Teams: Create Squad
+app.post('/api/teams/create', apiLimiter, async (req, res) => {
+  try {
+    const body = req.body || {}
+    const name = String(body.name || '').trim()
+    if (!name) return res.status(400).json({ error: 'Squad name cannot be empty.' })
+
+    const leaderEmail = String(body.leader?.email || req.headers['x-user-email'] || '').toLowerCase().trim()
+    if (!leaderEmail) return res.status(400).json({ error: 'Leader email is required.' })
+
+    const store = await getFullStore()
+    const allTeams = store.teams || []
+
+    if (allTeams.some(t => (t.name || '').toLowerCase() === name.toLowerCase())) {
+      return res.status(400).json({ error: `Squad name "${name}" is already taken. Please choose a unique name.` })
+    }
+
+    const existingTeam = allTeams.find(t =>
+      (t.leader_email || '').toLowerCase() === leaderEmail ||
+      (t.leader?.email || '').toLowerCase() === leaderEmail ||
+      (t.members || []).some(m => (m.email || '').toLowerCase() === leaderEmail)
+    )
+    if (existingTeam) {
+      return res.status(400).json({ error: `Email "${leaderEmail}" is already registered in squad "${existingTeam.name}".` })
+    }
+
+    const leader = body.leader || {}
+    const leaderName = leader.name || `${leader.firstName || ''} ${leader.lastName || ''}`.trim() || 'Squad Leader'
+    const leaderCollege = leader.college || 'Global Institute of Technology, Jaipur'
+
+    const leaderMember = {
+      id: 'mem_' + Math.random().toString(36).slice(2, 9),
+      name: leaderName,
+      firstName: leader.firstName || '',
+      lastName: leader.lastName || '',
+      email: leaderEmail,
+      phone: leader.phone || '',
+      college: leaderCollege,
+      rollNumber: leader.rollNumber || '',
+      course: leader.course || 'CSE',
+      year: leader.year || '1st',
+      gender: leader.gender || 'male',
+      role: 'leader',
+      status: 'accepted',
+    }
+
+    const teammateMembers = (Array.isArray(body.members) ? body.members : []).map((m, idx) => ({
+      id: m.id || ('mem_' + Math.random().toString(36).slice(2, 9)),
+      name: m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() || `Teammate ${idx + 2}`,
+      firstName: m.firstName || '',
+      lastName: m.lastName || '',
+      email: (m.email || '').toLowerCase().trim(),
+      phone: m.phone || '',
+      college: m.college || leaderCollege,
+      rollNumber: m.rollNumber || '',
+      course: m.course || 'CSE',
+      year: m.year || '1st',
+      gender: m.gender || 'male',
+      role: 'member',
+      status: 'pending',
+      inviteCode: m.inviteCode || ('CF5-' + Math.random().toString(36).slice(2, 6).toUpperCase()),
+      token: m.token || ('tok_' + Math.random().toString(36).slice(2, 9)),
+    }))
+
+    const utr = body.payment?.utr || body.utr || null
+    const newTeam = {
+      id: 'team_' + Math.random().toString(36).slice(2, 9),
+      name,
+      code: 'CF5' + Math.random().toString(36).slice(2, 6).toUpperCase(),
+      size: Number(body.size) || 3,
+      status: 'registered',
+      acceptedCount: 1,
+      tableNumber: null,
+      createdAt: new Date().toISOString(),
+      leader: {
+        ...leader,
+        email: leaderEmail,
+        name: leaderName,
+        college: leaderCollege,
+      },
+      leader_email: leaderEmail,
+      members: [leaderMember, ...teammateMembers],
+      invites: teammateMembers.map(tm => ({
+        name: tm.name,
+        email: tm.email,
+        token: tm.token,
+        inviteCode: tm.inviteCode,
+      })),
+      payment: {
+        status: utr ? 'submitted' : 'not_submitted',
+        utr: utr ? String(utr).trim() : null,
+        amount: Number(body.payment?.amount) || 800,
+        submittedAt: utr ? new Date().toISOString() : null,
+        verifiedAt: null,
+      }
+    }
+
+    await saveFullStore({ teams: [newTeam] }, false)
+    res.json({ success: true, team: newTeam })
+  } catch (err) {
+    safeErrorResponse(res, err)
+  }
+})
+
+// Teams: Submit Payment UTR
+app.post('/api/teams/:teamId/payment', apiLimiter, async (req, res) => {
+  try {
+    const { teamId } = req.params
+    const { utr } = req.body || {}
+    const cleanUtr = String(utr || '').trim()
+    if (!cleanUtr || cleanUtr.length < 6) {
+      return res.status(400).json({ error: 'Valid 12-digit UTR transaction reference is required.' })
+    }
+
+    const store = await getFullStore()
+    const team = (store.teams || []).find(t => t.id === teamId || t.code === teamId)
+    if (!team) return res.status(404).json({ error: 'Team not found' })
+
+    team.payment = {
+      ...(team.payment || {}),
+      status: 'submitted',
+      utr: cleanUtr,
+      amount: team.payment?.amount || 800,
+      submittedAt: new Date().toISOString(),
+    }
+
+    await saveFullStore({ teams: [team] }, false)
+    res.json({ success: true, payment: team.payment, team })
+  } catch (err) {
+    safeErrorResponse(res, err)
   }
 })
 
@@ -831,19 +1029,36 @@ app.get('/api/ops/registrations', adminLimiter, requireAdmin, async (req, res) =
     const candidates = []
 
     for (const t of store.teams || []) {
+      const leaderCollege = t.leader?.college || 'GIT Jaipur'
       for (const m of t.members || []) {
         const isLeader = m.role === 'leader'
+        const isConfirmed = isLeader || m.status === 'accepted' || m.status === 'confirmed'
+        const candidateStatus = isConfirmed ? 'accepted' : (m.status || 'pending')
+
         candidates.push({
           candidateId: m.id || m.email,
-          candidateName: m.name || m.email,
+          candidateName: m.name || (isLeader ? t.leader?.name : 'Operative'),
           email: m.email,
-          role: isLeader ? 'Leader' : 'Member',
+          role: isLeader ? 'leader' : 'member',
           phone: m.phone || (isLeader ? t.leader?.phone : '') || '',
-          college: m.college || (isLeader ? t.leader?.college : '') || 'GIT Jaipur',
+          college: m.college || leaderCollege,
+          collegeName: m.college || leaderCollege,
+          rollNumber: m.rollNumber || (isLeader ? t.leader?.rollNumber : '') || '',
+          course: m.course || (isLeader ? t.leader?.course : '') || 'CSE',
+          year: m.year || (isLeader ? t.leader?.year : '') || '1st',
+          gender: m.gender || (isLeader ? t.leader?.gender : '') || 'male',
           teamId: t.id,
           teamName: t.name,
+          status: candidateStatus,
+          inviteStatus: candidateStatus,
+          isConfirmed,
+          utr: t.payment?.utr || t.payment?.reference || 'NOT_SUBMITTED',
+          paymentStatus: t.payment?.status || 'not_submitted',
           paymentVerified: t.payment?.status === 'verified',
-          paymentReference: t.payment?.utr || t.payment?.reference || 'N/A',
+          paymentReference: t.payment?.utr || t.payment?.reference || 'NOT_SUBMITTED',
+          amount: t.payment?.amount || 800,
+          submittedAt: t.payment?.submittedAt || t.createdAt || new Date().toISOString(),
+          verifiedAt: t.payment?.verifiedAt || null,
           earlyExit: Boolean(m.earlyExit),
           tableNumber: t.tableNumber || null,
           track: t.track || null,
@@ -856,7 +1071,7 @@ app.get('/api/ops/registrations', adminLimiter, requireAdmin, async (req, res) =
 
     res.json({ success: true, candidates, teams: store.teams || [] })
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    safeErrorResponse(res, err)
   }
 })
 

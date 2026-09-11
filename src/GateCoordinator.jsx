@@ -60,8 +60,18 @@ export default function GateCoordinator() {
   useEffect(() => {
     if (coordinator) {
       reloadTeams()
-      const id = setInterval(reloadTeams, 3500)
-      return () => clearInterval(id)
+      const id = setInterval(() => {
+        if (typeof document !== 'undefined' && document.hidden) return
+        reloadTeams()
+      }, 5000)
+      const onVisible = () => {
+        if (typeof document !== 'undefined' && !document.hidden) reloadTeams()
+      }
+      document.addEventListener('visibilitychange', onVisible)
+      return () => {
+        clearInterval(id)
+        document.removeEventListener('visibilitychange', onVisible)
+      }
     }
   }, [coordinator])
 

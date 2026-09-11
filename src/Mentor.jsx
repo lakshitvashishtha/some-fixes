@@ -44,8 +44,18 @@ export default function Mentor() {
   useEffect(() => {
     if (mentor) {
       reloadData()
-      const id = setInterval(reloadData, 5000)
-      return () => clearInterval(id)
+      const id = setInterval(() => {
+        if (typeof document !== 'undefined' && document.hidden) return
+        reloadData()
+      }, 6000)
+      const onVisible = () => {
+        if (typeof document !== 'undefined' && !document.hidden) reloadData()
+      }
+      document.addEventListener('visibilitychange', onVisible)
+      return () => {
+        clearInterval(id)
+        document.removeEventListener('visibilitychange', onVisible)
+      }
     }
   }, [mentor])
 

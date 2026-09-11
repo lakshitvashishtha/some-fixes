@@ -168,16 +168,23 @@ export default function Admin() {
   useEffect(() => {
     if (authorized) {
       reloadState()
-      const interval = setInterval(reloadState, 3000)
-      const onSync = () => reloadState()
+      const interval = setInterval(() => {
+        if (typeof document !== 'undefined' && document.hidden) return
+        reloadState()
+      }, 4000)
+      const onSync = () => {
+        if (typeof document !== 'undefined' && !document.hidden) reloadState()
+      }
       window.addEventListener('codefiesta_teams_updated', onSync)
       window.addEventListener('hackathon:state-updated', onSync)
       window.addEventListener('storage', onSync)
+      document.addEventListener('visibilitychange', onSync)
       return () => {
         clearInterval(interval)
         window.removeEventListener('codefiesta_teams_updated', onSync)
         window.removeEventListener('hackathon:state-updated', onSync)
         window.removeEventListener('storage', onSync)
+        document.removeEventListener('visibilitychange', onSync)
       }
     }
   }, [authorized])
@@ -1015,14 +1022,14 @@ Track: ${mentor.track || 'All Tracks'}`
               <div className="p-4 rounded-lg bg-[#0e1220] border border-emerald-500/30">
                 <span className="text-[10px] font-mono text-emerald-400 uppercase block">Verified &amp; Paid</span>
                 <span className="font-arcade text-2xl text-emerald-400 mt-1 block">
-                  {new Set(candidatesLedger.filter((c) => c.paymentStatus === 'verified').map((c) => c.teamId)).size}
+                  {new Set(candidatesLedger.filter((c) => c.paymentStatus === 'verified' || c.paymentVerified || c.team?.payment?.status === 'verified').map((c) => c.teamId)).size}
                 </span>
                 <span className="text-[9px] text-emerald-500/70 font-mono">Passes issued &amp; emailed</span>
               </div>
               <div className="p-4 rounded-lg bg-[#14121a] border border-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.1)]">
                 <span className="text-[10px] font-mono text-amber-400 uppercase block">Pending Bank Match</span>
                 <span className="font-arcade text-2xl text-amber-400 mt-1 block">
-                  {new Set(candidatesLedger.filter((c) => c.paymentStatus === 'submitted').map((c) => c.teamId)).size}
+                  {new Set(candidatesLedger.filter((c) => (c.paymentStatus === 'submitted' || c.team?.payment?.status === 'submitted' || (!c.paymentVerified && ((c.utr && c.utr !== 'NOT_SUBMITTED') || (c.paymentReference && c.paymentReference !== 'NOT_SUBMITTED' && c.paymentReference !== 'N/A'))))).map((c) => c.teamId)).size}
                 </span>
                 <span className="text-[9px] text-amber-500/70 font-mono">Awaiting UTR match</span>
               </div>
@@ -1050,18 +1057,18 @@ Track: ${mentor.track || 'All Tracks'}`
                   { id: 'pending', label: 'Pending UTR' },
                   { id: 'verified', label: 'Verified' },
                   { id: 'unpaid', label: 'Unpaid' },
-                ].map((f) => (
+                ].map((flt) => (
                   <button
-                    key={f.id}
+                    key={flt.id}
                     type="button"
-                    onClick={() => setRegFilter(f.id)}
-                    className={`px-2.5 py-1.5 rounded text-[10px] font-arcade uppercase transition ${
-                      regFilter === f.id
-                        ? 'bg-tactical text-black font-bold'
+                    onClick={() => setRegFilter(flt.id)}
+                    className={`px-2.5 py-1 rounded text-xs font-mono uppercase transition-all ${
+                      regFilter === flt.id
+                        ? 'bg-tactical text-black font-bold shadow-[0_0_10px_rgba(255,184,0,0.3)]'
                         : 'bg-[#151928] text-slate-400 hover:text-white border border-slate-700'
                     }`}
                   >
-                    {f.label}
+                    {flt.label}
                   </button>
                 ))}
               </div>
@@ -1093,8 +1100,8 @@ Track: ${mentor.track || 'All Tracks'}`
                     </tr>
                   ) : (
                     filteredCandidates.map((c, idx) => {
-                      const isVerified = c.paymentStatus === 'verified'
-                      const isSubmitted = c.paymentStatus === 'submitted'
+                      const isVerified = c.paymentStatus === 'verified' || c.paymentVerified || c.team?.payment?.status === 'verified'
+                      const isSubmitted = c.paymentStatus === 'submitted' || c.team?.payment?.status === 'submitted' || (!isVerified && ((c.utr && c.utr !== 'NOT_SUBMITTED') || (c.paymentReference && c.paymentReference !== 'NOT_SUBMITTED' && c.paymentReference !== 'N/A') || (c.team?.payment?.utr && c.team?.payment?.utr !== 'NOT_SUBMITTED')))
                       const isLeader = c.role === 'leader'
 
                       return (
@@ -1227,20 +1234,21 @@ Track: ${mentor.track || 'All Tracks'}`
 
                           {/* 6. Transaction ID (UTR) */}
                           <td className="py-3 px-4 whitespace-nowrap">
-                            {c.utr && c.utr !== 'NOT_SUBMITTED' ? (
+                            {(c.utr && c.utr !== 'NOT_SUBMITTED') || (c.paymentReference && c.paymentReference !== 'NOT_SUBMITTED' && c.paymentReference !== 'N/A') || (c.team?.payment?.utr && c.team?.payment?.utr !== 'NOT_SUBMITTED') ? (
                               <div className="inline-flex items-center gap-1.5">
                                 <span className={`px-2 py-1 rounded font-mono text-xs font-bold ${
                                   isVerified
                                     ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
                                     : 'bg-amber-500/20 text-amber-300 border border-amber-500 font-bold animate-pulse'
                                 }`}>
-                                  {c.utr}
+                                  {c.utr || c.paymentReference || c.team?.payment?.utr}
                                 </span>
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    navigator.clipboard?.writeText(c.utr)
-                                    setNotice(`✓ Copied UTR ${c.utr} to clipboard`)
+                                    const utrVal = c.utr || c.paymentReference || c.team?.payment?.utr;
+                                    navigator.clipboard?.writeText(utrVal)
+                                    setNotice(`✓ Copied UTR ${utrVal} to clipboard`)
                                     setTimeout(() => setNotice(''), 2000)
                                   }}
                                   title="Copy UTR to match with bank account"
