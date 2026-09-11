@@ -48,6 +48,35 @@ function sharedStatePlugin() {
           return;
         }
 
+        if (req.url === '/api/ops/admin-login' || req.url === '/api/ops/verify-admin') {
+          if (req.method === 'POST') {
+            let body = '';
+            req.on('data', (chunk) => { body += chunk; });
+            req.on('end', () => {
+              try {
+                const incoming = JSON.parse(body || '{}');
+                const clean = String(incoming.passkey || '').trim();
+                const expected = String(process.env.ADMIN_VAULT_KEY || 'cf5_master_access_2026').trim();
+                if (clean === expected) {
+                  res.setHeader('Content-Type', 'application/json');
+                  res.setHeader('Access-Control-Allow-Origin', '*');
+                  res.end(JSON.stringify({ success: true, authorized: true, token: 'ops_session_valid' }));
+                  return;
+                }
+                res.statusCode = 401;
+                res.setHeader('Content-Type', 'application/json');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                res.end(JSON.stringify({ error: 'Access Denied: Invalid Master Passkey' }));
+              } catch (err) {
+                res.statusCode = 400;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: err.message }));
+              }
+            });
+            return;
+          }
+        }
+
         if (req.url === '/api/shared-store' || req.url?.startsWith('/api/shared-store?')) {
           if (req.method === 'GET') {
             const data = readDb();

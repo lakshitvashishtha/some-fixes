@@ -60,11 +60,15 @@ const recordAdminFailure = (ip) => {
     console.warn(`[SECURITY ALERT] IP ${ip} exceeded max admin passkey attempts. Temporarily locked for 15m.`)
   }
   adminAttemptMap.set(ip, record)
+  return Math.max(0, 5 - record.failedAttempts)
 }
 
 const recordAdminSuccess = (ip) => {
   adminAttemptMap.delete(ip)
 }
+
+const recordAdminLoginSuccess = recordAdminSuccess
+const recordAdminLoginFailure = recordAdminFailure
 
 // 4. Centralized requireAdmin middleware
 const requireAdmin = (req, res, next) => {
