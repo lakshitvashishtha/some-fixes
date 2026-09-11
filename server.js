@@ -452,17 +452,18 @@ async function saveFullStore(incoming, isAdmin = false) {
   let mergedOpsState = { ...(current.opsState || {}) }
   if (isAdmin && incoming.opsState) {
     mergedOpsState = { ...mergedOpsState, ...incoming.opsState }
-    if (incoming.opsState?.tableAssignments) {
-      mergedOpsState.tableAssignments = {
-        ...(current.opsState?.tableAssignments || {}),
-        ...incoming.opsState.tableAssignments
-      }
+    if (incoming.opsState.tableAssignments !== undefined) {
+      mergedOpsState.tableAssignments = { ...(incoming.opsState.tableAssignments || {}) }
     }
   }
 
   // Ensure two-way sync between opsState.tableAssignments and team.tableNumber
-  if (mergedOpsState?.tableAssignments) {
+  if (mergedOpsState?.tableAssignments !== undefined) {
     mergedTeams = mergedTeams.map((t) => {
+      if (incoming.opsState && incoming.opsState.tableAssignments !== undefined) {
+        const assigned = mergedOpsState.tableAssignments[t.id]
+        return { ...t, tableNumber: assigned || null }
+      }
       const assigned = mergedOpsState.tableAssignments[t.id]
       if (assigned !== undefined) {
         return { ...t, tableNumber: assigned || null }
@@ -470,7 +471,7 @@ async function saveFullStore(incoming, isAdmin = false) {
       return t
     })
   }
-  if (mergedOpsState) {
+  if (!incoming.opsState && mergedOpsState) {
     mergedOpsState.tableAssignments = mergedOpsState.tableAssignments || {}
     for (const t of mergedTeams) {
       if (t.tableNumber && !mergedOpsState.tableAssignments[t.id]) {
@@ -531,8 +532,8 @@ async function saveFullStore(incoming, isAdmin = false) {
         )
       }
 
-      // Sync teams & members (only sync modified delta when not wiping)
-      const teamsToSync = wipe ? mergedTeams : (Array.isArray(incoming.teams) ? incoming.teams : [])
+      // Sync teams & members (sync modified delta or if table assignments changed)
+      const teamsToSync = wipe ? mergedTeams : (Array.isArray(incoming.teams) && incoming.teams.length > 0 ? incoming.teams : (incoming.opsState?.tableAssignments ? mergedTeams : []))
       for (const t of teamsToSync) {
         if (!t.id) continue
         await pool.query(
@@ -621,6 +622,10 @@ async function saveFullStore(incoming, isAdmin = false) {
       console.error('TiDB sync error:', dbErr.message)
     }
   }
+
+  invalidateStoreCache()
+  storeCache = updated
+  storeCacheExpiry = Date.now() + 2500
 
   return updated
 }
@@ -1135,6 +1140,94 @@ app.post('/api/ops/revert-payment', adminLimiter, requireAdmin, async (req, res)
     res.json({ success: true, team })
   } catch (err) {
     res.status(500).json({ error: err.message })
+  }
+})
+
+// Ops: Physical Workstation Table Allocation (Assign & Clear)
+app.post('/api/ops/assign-table', adminLimiter, requireAdmin, async (req, res) => {
+  try {
+    const { teamId, tableNumber } = req.body || {}
+    if (!teamId) return res.status(400).json({ error: 'Team ID is required.' })
+
+    const cleanTable = String(tableNumber || '').toUpperCase().trim()
+    const finalTable = cleanTable && cleanTable !== 'UNASSIGNED' && cleanTable !== 'CLEAR' && cleanTable !== 'NONE' ? cleanTable : null
+
+    const store = await getFullStore()
+    const team = (store.teams || []).find(t => t.id === teamId || t.code === teamId || (t.name && t.name.toLowerCase() === String(teamId).toLowerCase()))
+    const targetTeamId = team ? team.id : teamId
+
+    if (team) {
+      team.tableNumber = finalTable
+    }
+
+    store.opsState = store.opsState || {}
+    store.opsState.tableAssignments = store.opsState.tableAssignments || {}
+    if (finalTable) {
+      store.opsState.tableAssignments[targetTeamId] = finalTable
+    } else {
+      delete store.opsState.tableAssignments[targetTeamId]
+      if (team) team.tableNumber = null
+    }
+
+    if (pool) {
+      try {
+        await pool.query('UPDATE teams SET table_number = ? WHERE id = ?', [finalTable, targetTeamId])
+        await pool.query(
+          `INSERT INTO ops_state (state_key, state_val) VALUES ('table_assignments_json', ?)
+           ON DUPLICATE KEY UPDATE state_val = VALUES(state_val)`,
+          [JSON.stringify(store.opsState.tableAssignments)]
+        )
+      } catch (dbErr) {
+        console.warn('[DB Warn] assign-table query:', dbErr.message)
+      }
+    }
+
+    await saveFullStore({
+      teams: team ? [team] : [],
+      opsState: { tableAssignments: store.opsState.tableAssignments }
+    }, true)
+
+    if (typeof io !== 'undefined' && io?.emit) {
+      io.emit('hackathon:state-updated', { tableAssignments: store.opsState.tableAssignments })
+      io.emit('codefiesta_teams_updated', { teams: store.teams })
+    }
+
+    res.json({
+      success: true,
+      teamId: targetTeamId,
+      tableNumber: finalTable,
+      tableAssignments: store.opsState.tableAssignments
+    })
+  } catch (err) {
+    safeErrorResponse(res, err)
+  }
+})
+
+// Ops: Get hackathon state & table assignments
+app.get('/api/ops/state', apiLimiter, async (req, res) => {
+  try {
+    const store = await getFullStore()
+    const tableAssignments = { ...(store.opsState?.tableAssignments || {}) }
+    const state = {
+      ...(store.opsState || {}),
+      tableAssignments,
+      problemStatements: store.problemStatements || []
+    }
+    res.setHeader('Cache-Control', 'private, no-cache')
+    res.json({ success: true, state })
+  } catch (err) {
+    safeErrorResponse(res, err)
+  }
+})
+
+// Gate: Get all teams for check-in
+app.get('/api/gate/teams', apiLimiter, async (req, res) => {
+  try {
+    const store = await getFullStore()
+    res.setHeader('Cache-Control', 'private, no-cache')
+    res.json({ success: true, teams: store.teams || [] })
+  } catch (err) {
+    safeErrorResponse(res, err)
   }
 })
 

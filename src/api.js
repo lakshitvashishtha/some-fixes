@@ -181,7 +181,7 @@ export async function syncWithSharedStore(forceOverwrite = false) {
           // Direct authoritative server sync
           finalTeams = teams.map((t) => ({
             ...t,
-            tableNumber: (opsState?.tableAssignments?.[t.id]) || t.tableNumber || null,
+            tableNumber: (opsState?.tableAssignments?.[t.id]) !== undefined ? opsState.tableAssignments[t.id] : (t.tableNumber || null),
           }))
         } else {
           let localTeams = []
@@ -199,7 +199,9 @@ export async function syncWithSharedStore(forceOverwrite = false) {
               const acceptedCount = teamMembers.filter(
                 (m) => (m.status === 'accepted' || m.status === 'confirmed') && !m.earlyExit
               ).length
-              const assignedTable = (opsState?.tableAssignments?.[lt.id]) || serverTeam.tableNumber || lt.tableNumber || null
+              const assignedTable = (opsState?.tableAssignments && opsState.tableAssignments[lt.id] !== undefined)
+                ? (opsState.tableAssignments[lt.id] || null)
+                : (serverTeam.tableNumber !== undefined ? (serverTeam.tableNumber || null) : (lt.tableNumber || null))
               map.set(lt.id, {
                 ...lt,
                 ...serverTeam,
@@ -214,11 +216,9 @@ export async function syncWithSharedStore(forceOverwrite = false) {
         }
 
         // Sync opsState table assignments to all teams in map
-        if (opsState?.tableAssignments) {
+        if (opsState?.tableAssignments !== undefined) {
           for (const t of finalTeams) {
-            if (opsState.tableAssignments[t.id]) {
-              t.tableNumber = opsState.tableAssignments[t.id]
-            }
+            t.tableNumber = opsState.tableAssignments[t.id] || null
           }
         }
 
@@ -255,10 +255,9 @@ export async function syncWithSharedStore(forceOverwrite = false) {
           : {
               ...opsState,
               ...(currentOps || {}),
-              tableAssignments: {
-                ...(opsState.tableAssignments || {}),
-                ...((currentOps && currentOps.tableAssignments) || {}),
-              },
+              tableAssignments: opsState.tableAssignments !== undefined
+                ? { ...(opsState.tableAssignments || {}) }
+                : { ...((currentOps && currentOps.tableAssignments) || {}) },
             }
         if (problemStatements) {
           mergedOps.problemStatements = problemStatements
@@ -1834,7 +1833,7 @@ async function handleFallback(path, options, err) {
     const state = getSealedHackathonState()
     state.tableAssignments = state.tableAssignments || {}
     const cleanTable = (body.tableNumber || '').toUpperCase().trim()
-    const finalTable = cleanTable && cleanTable !== 'UNASSIGNED' ? cleanTable : null
+    const finalTable = cleanTable && cleanTable !== 'UNASSIGNED' && cleanTable !== 'CLEAR' && cleanTable !== 'NONE' ? cleanTable : null
     if (!finalTable) {
       delete state.tableAssignments[body.teamId]
     } else {
@@ -1846,7 +1845,7 @@ async function handleFallback(path, options, err) {
     let allRegistered = getAllRegisteredTeams()
     let found = false
     let updated = allRegistered.map((t) => {
-      if (t.id === body.teamId) {
+      if (t.id === body.teamId || t.code === body.teamId || (t.name && t.name.toLowerCase() === String(body.teamId).toLowerCase())) {
         found = true
         return {
           ...t,
@@ -1860,7 +1859,7 @@ async function handleFallback(path, options, err) {
       try {
         const raw = localStorage.getItem('cf_teams')
         const parsed = raw ? JSON.parse(raw) : []
-        updated = parsed.map((t) => (t.id === body.teamId ? { ...t, tableNumber: finalTable } : t))
+        updated = parsed.map((t) => (t.id === body.teamId || t.code === body.teamId || (t.name && t.name.toLowerCase() === String(body.teamId).toLowerCase()) ? { ...t, tableNumber: finalTable } : t))
       } catch {}
     }
 

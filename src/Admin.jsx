@@ -265,23 +265,41 @@ export default function Admin() {
 
   const handleAssignTable = async (teamId, tableNumber) => {
     const cleanTable = (tableNumber || '').toUpperCase().trim()
-    const finalTable = cleanTable && cleanTable !== 'UNASSIGNED' ? cleanTable : null
+    const finalTable = cleanTable && cleanTable !== 'UNASSIGNED' && cleanTable !== 'CLEAR' && cleanTable !== 'NONE' ? cleanTable : null
 
     // Instant optimistic state update
-    setHackState((prev) => ({
-      ...(prev || {}),
-      tableAssignments: {
-        ...(prev?.tableAssignments || {}),
-        [teamId]: finalTable,
-      },
-    }))
+    setHackState((prev) => {
+      const nextAssignments = { ...(prev?.tableAssignments || {}) }
+      if (finalTable) {
+        nextAssignments[teamId] = finalTable
+      } else {
+        delete nextAssignments[teamId]
+      }
+      return {
+        ...(prev || {}),
+        tableAssignments: nextAssignments,
+      }
+    })
     setTeams((prev) =>
       prev.map((t) => (t.id === teamId ? { ...t, tableNumber: finalTable } : t))
+    )
+    setCandidatesLedger((prev) =>
+      prev.map((c) => (c.teamId === teamId ? { ...c, tableNumber: finalTable } : c))
     )
     setTableEdits((prev) => ({
       ...prev,
       [teamId]: finalTable || '',
     }))
+
+    // Directly update local storage cache so immediate sync won't revert
+    try {
+      const raw = localStorage.getItem('cf_teams')
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        const updated = parsed.map((t) => (t.id === teamId ? { ...t, tableNumber: finalTable } : t))
+        localStorage.setItem('cf_teams', JSON.stringify(updated))
+      }
+    } catch {}
 
     try {
       await assignTableApi(teamId, finalTable || '', ADMIN_VAULT_KEY)
@@ -1273,7 +1291,7 @@ Track: ${mentor.track || 'All Tracks'}`
                               <div className="flex items-center gap-1.5">
                                 <input
                                   type="text"
-                                  value={tableEdits[c.teamId] !== undefined ? tableEdits[c.teamId] : ((hackState?.tableAssignments || {})[c.teamId] || '')}
+                                  value={tableEdits[c.teamId] !== undefined ? tableEdits[c.teamId] : ((hackState?.tableAssignments || {})[c.teamId] || c.tableNumber || '')}
                                   onChange={(e) => setTableEdits({ ...tableEdits, [c.teamId]: e.target.value })}
                                   placeholder="e.g. T-01"
                                   className="w-20 rounded bg-[#161a28] border border-tactical px-2 py-1 text-[10px] text-tactical font-mono uppercase text-center font-bold"
@@ -1285,22 +1303,38 @@ Track: ${mentor.track || 'All Tracks'}`
                                     setEditingTableTeamId(null)
                                   }}
                                   className="text-xs text-emerald-400 hover:text-white px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/40"
+                                  title="Save assignment"
                                 >
                                   ✓
                                 </button>
+                                {((hackState?.tableAssignments || {})[c.teamId] || c.tableNumber) && (
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      setTableEdits({ ...tableEdits, [c.teamId]: '' })
+                                      await handleAssignTable(c.teamId, '')
+                                      setEditingTableTeamId(null)
+                                    }}
+                                    className="text-xs text-red-400 hover:text-white px-1.5 py-0.5 rounded bg-red-500/20 border border-red-500/40"
+                                    title="Remove table assignment"
+                                  >
+                                    🗑️
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => setEditingTableTeamId(null)}
                                   className="text-xs text-slate-400 hover:text-white px-1.5 py-0.5 rounded bg-slate-800"
+                                  title="Cancel"
                                 >
                                   ✕
                                 </button>
                               </div>
                             ) : (
                               <div className="flex items-center gap-2">
-                                {(hackState?.tableAssignments || {})[c.teamId] ? (
+                                {((hackState?.tableAssignments || {})[c.teamId] || c.tableNumber) ? (
                                   <span className="px-2 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/40 text-cyan-300 font-mono text-[10px] font-bold">
-                                    {(hackState?.tableAssignments || {})[c.teamId]}
+                                    {(hackState?.tableAssignments || {})[c.teamId] || c.tableNumber}
                                   </span>
                                 ) : (
                                   <span className="text-slate-500 text-[10px] font-mono italic">
@@ -1311,11 +1345,11 @@ Track: ${mentor.track || 'All Tracks'}`
                                   type="button"
                                   onClick={() => {
                                     setEditingTableTeamId(c.teamId)
-                                    setTableEdits({ ...tableEdits, [c.teamId]: (hackState?.tableAssignments || {})[c.teamId] || '' })
+                                    setTableEdits({ ...tableEdits, [c.teamId]: (hackState?.tableAssignments || {})[c.teamId] || c.tableNumber || '' })
                                   }}
                                   className="text-[9px] font-mono text-tactical hover:underline uppercase"
                                 >
-                                  {(hackState?.tableAssignments || {})[c.teamId] ? 'Edit' : '+ Assign'}
+                                  {((hackState?.tableAssignments || {})[c.teamId] || c.tableNumber) ? 'Edit' : '+ Assign'}
                                 </button>
                               </div>
                             )}
@@ -2265,7 +2299,14 @@ Track: ${mentor.track || 'All Tracks'}`
                         />
                         <button
                           type="button"
-                          onClick={() => handleAssignTable(t.id, editVal)}
+                          onClick={() => {
+                            if (!currentTable && (!editVal || !editVal.trim())) {
+                              setNotice('⚠️ Please enter a table number (e.g. T-01) to assign')
+                              setTimeout(() => setNotice(''), 3000)
+                              return
+                            }
+                            handleAssignTable(t.id, editVal)
+                          }}
                           className="px-3 py-1.5 rounded bg-tactical text-black font-arcade text-[9px] uppercase font-bold hover:bg-[#e6a600] transition"
                         >
                           ASSIGN
