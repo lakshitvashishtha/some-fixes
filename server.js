@@ -433,10 +433,14 @@ async function saveFullStore(incoming, isAdmin = false) {
           ...existing,
           ...t,
           payment: safePayment,
-          tableNumber: existing.tableNumber !== undefined ? existing.tableNumber : (t.tableNumber || null),
+          tableNumber: t.tableNumber !== undefined ? (t.tableNumber || null) : (existing.tableNumber || null),
         })
       } else {
-        teamMap.set(t.id, t)
+        teamMap.set(t.id, {
+          ...(existing || {}),
+          ...t,
+          tableNumber: t.tableNumber !== undefined ? (t.tableNumber || null) : ((existing && existing.tableNumber) || null),
+        })
       }
     }
     mergedTeams = Array.from(teamMap.values())

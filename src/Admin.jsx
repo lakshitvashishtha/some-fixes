@@ -16,6 +16,7 @@ import {
   updateCoordinatorApi,
   getGateTeamsApi,
   getAllRegisteredTeamsApi,
+  getAllRegisteredTeams,
   fetchMyTeams,
   verifyTeamPaymentApi,
   getRegistrationsLedgerApi,
@@ -95,7 +96,13 @@ export default function Admin() {
   const ADMIN_VAULT_KEY = passkeyInput.trim() || getStoredAdminKey() || 'cf5_master_access_2026'
   const [activeTab, setActiveTab] = useState('registrations') // 'registrations' | 'problems' | 'tables' | 'broadcast' | 'mentors' | 'scores'
   const [hackState, setHackState] = useState(null)
-  const [teams, setTeams] = useState([])
+  const [teams, setTeams] = useState(() => {
+    try {
+      const all = getAllRegisteredTeams()
+      if (Array.isArray(all) && all.length > 0) return all
+    } catch {}
+    return []
+  })
   const [notice, setNotice] = useState('')
 
   // Form states
@@ -128,7 +135,13 @@ export default function Admin() {
   }
 
   // Registrations & Spreadsheet states
-  const [candidatesLedger, setCandidatesLedger] = useState([])
+  const [candidatesLedger, setCandidatesLedger] = useState(() => {
+    try {
+      const all = getAllRegisteredTeams()
+      if (Array.isArray(all) && all.length > 0) return buildCandidatesFromTeams(all)
+    } catch {}
+    return []
+  })
   const [regSearch, setRegSearch] = useState('')
   const [regFilter, setRegFilter] = useState('all') // 'all' | 'verified' | 'pending'
   const [verifyingTeamId, setVerifyingTeamId] = useState(null)
@@ -164,7 +177,7 @@ export default function Admin() {
   // Refresh state
   const reloadState = async () => {
     try {
-      await syncWithSharedStore().catch(() => null)
+      const syncResult = await syncWithSharedStore().catch(() => null)
       const res = await getHackathonStateApi().catch(() => null)
       if (res?.state) {
         setHackState(res.state)
@@ -174,21 +187,29 @@ export default function Admin() {
           return res.state.problemStatements || DEFAULT_PROBLEM_STATEMENTS
         })
       }
+
+      const localTeams = getAllRegisteredTeams()
       const teamsRes = await getAllRegisteredTeamsApi().catch(() => null)
-      const currentTeams = teamsRes?.teams || []
-      if (currentTeams.length > 0) setTeams(currentTeams)
+      const regRes = await getRegistrationsLedgerApi(ADMIN_VAULT_KEY).catch(() => null)
+
+      const serverTeams = (teamsRes?.teams && teamsRes.teams.length > 0)
+        ? teamsRes.teams
+        : ((regRes?.teams && regRes.teams.length > 0) ? regRes.teams : (syncResult?.teams || []))
+
+      const effectiveTeams = serverTeams.length > 0 ? serverTeams : (localTeams.length > 0 ? localTeams : (teams || []))
+      if (effectiveTeams.length > 0) {
+        setTeams(effectiveTeams)
+      }
 
       const gateRes = await getGateTeamsApi().catch(() => null)
       if (gateRes?.teams) setGateTeams(gateRes.teams)
 
-      const regRes = await getRegistrationsLedgerApi(ADMIN_VAULT_KEY).catch(() => null)
-      if (regRes?.candidates && regRes.candidates.length > 0) {
-        setCandidatesLedger(regRes.candidates)
-      } else if (currentTeams.length > 0) {
-        setCandidatesLedger(buildCandidatesFromTeams(currentTeams))
+      let effectiveCandidates = (regRes?.candidates && regRes.candidates.length > 0) ? regRes.candidates : []
+      if (effectiveCandidates.length === 0 && effectiveTeams.length > 0) {
+        effectiveCandidates = buildCandidatesFromTeams(effectiveTeams)
       }
-      if (regRes?.teams && regRes.teams.length > 0) {
-        setTeams(regRes.teams)
+      if (effectiveCandidates.length > 0) {
+        setCandidatesLedger(effectiveCandidates)
       }
     } catch {}
   }
@@ -209,25 +230,30 @@ export default function Admin() {
         }
       }
 
+      const localTeams = getAllRegisteredTeams()
       const teamsRes = await getAllRegisteredTeamsApi().catch(() => null)
-      const currentTeams = teamsRes?.teams || syncResult?.teams || teams || []
-      if (currentTeams.length > 0) setTeams(currentTeams)
-
       const regRes = await getRegistrationsLedgerApi(ADMIN_VAULT_KEY).catch(() => null)
-      if (regRes?.candidates && regRes.candidates.length > 0) {
-        setCandidatesLedger(regRes.candidates)
-      } else if (currentTeams.length > 0) {
-        setCandidatesLedger(buildCandidatesFromTeams(currentTeams))
+
+      const serverTeams = (teamsRes?.teams && teamsRes.teams.length > 0)
+        ? teamsRes.teams
+        : ((regRes?.teams && regRes.teams.length > 0) ? regRes.teams : (syncResult?.teams || []))
+
+      const effectiveTeams = serverTeams.length > 0 ? serverTeams : (localTeams.length > 0 ? localTeams : (teams || []))
+      if (effectiveTeams.length > 0) setTeams(effectiveTeams)
+
+      let effectiveCandidates = (regRes?.candidates && regRes.candidates.length > 0) ? regRes.candidates : []
+      if (effectiveCandidates.length === 0 && effectiveTeams.length > 0) {
+        effectiveCandidates = buildCandidatesFromTeams(effectiveTeams)
       }
-      if (regRes?.teams && regRes.teams.length > 0) {
-        setTeams(regRes.teams)
+      if (effectiveCandidates.length > 0) {
+        setCandidatesLedger(effectiveCandidates)
       }
 
       const gateRes = await getGateTeamsApi().catch(() => null)
       if (gateRes?.teams) setGateTeams(gateRes.teams)
 
-      const teamCount = regRes?.teams?.length || currentTeams.length || 0
-      const candCount = regRes?.candidates?.length || candidatesLedger.length || 0
+      const teamCount = effectiveTeams.length
+      const candCount = effectiveCandidates.length
       setNotice(`✅ Data Synced Fresh! Loaded ${teamCount} squads and ${candCount} candidates from shared database.`)
       setTimeout(() => setNotice(''), 4500)
     } catch (err) {
@@ -590,12 +616,55 @@ Track: ${mentor.track || 'All Tracks'}`
 
   const handleVerifyPayment = async (teamId, verified = true, notes = '') => {
     setVerifyingTeamId(teamId)
+    // Instant optimistic update
+    setCandidatesLedger((prev) =>
+      prev.map((c) => {
+        if (c.teamId === teamId) {
+          return {
+            ...c,
+            paymentStatus: verified ? 'verified' : 'rejected',
+            paymentVerified: verified,
+            paymentNotes: notes || (verified ? 'Payment matched against bank statements' : 'Payment rejected'),
+            verifiedAt: verified ? new Date().toISOString() : null,
+            team: {
+              ...(c.team || {}),
+              status: verified ? 'confirmed' : 'rejected',
+              payment: {
+                ...(c.team?.payment || {}),
+                status: verified ? 'verified' : 'rejected',
+                verifiedAt: verified ? new Date().toISOString() : null,
+                notes: notes || (verified ? 'Payment matched against bank statements' : 'Payment rejected'),
+              },
+            },
+          }
+        }
+        return c
+      })
+    )
+    setTeams((prev) =>
+      prev.map((t) => {
+        if (t.id === teamId) {
+          return {
+            ...t,
+            status: verified ? 'confirmed' : 'rejected',
+            payment: {
+              ...(t.payment || {}),
+              status: verified ? 'verified' : 'rejected',
+              verifiedAt: verified ? new Date().toISOString() : null,
+              notes: notes || (verified ? 'Payment matched against bank statements' : 'Payment rejected'),
+            },
+          }
+        }
+        return t
+      })
+    )
+
     try {
       const res = await verifyTeamPaymentApi(teamId, verified, notes, ADMIN_VAULT_KEY)
       if (verified) {
-        setNotice(`✓ Payment verified! Official confirmation email dispatched to ${res.emailDispatched?.to || 'Leader'} for team "${res.team?.name || 'Squad'}" (UTR: ${res.team?.payment?.utr}).`)
+        setNotice(`✓ Payment verified! Official confirmation email dispatched to ${res?.emailDispatched?.to || 'Leader'} for team "${res?.team?.name || 'Squad'}" (UTR: ${res?.team?.payment?.utr}).`)
       } else {
-        setNotice(`✕ Payment rejected for team "${res.team?.name || 'Squad'}". Dashboard access locked.`)
+        setNotice(`✕ Payment rejected for team "${res?.team?.name || 'Squad'}". Dashboard access locked.`)
       }
       reloadState()
       setTimeout(() => setNotice(''), 4500)
@@ -906,8 +975,8 @@ Track: ${mentor.track || 'All Tracks'}`
         c.status === 'confirmed' ||
         c.role === 'leader'
 
-      const isVerified = c.paymentStatus === 'verified' || c.paymentVerified || c.team?.payment?.status === 'verified'
-      const isRejected = !isVerified && (c.paymentStatus === 'rejected' || c.team?.payment?.status === 'rejected')
+      const isRejected = c.paymentStatus === 'rejected' || c.team?.payment?.status === 'rejected' || c.team?.status === 'rejected'
+      const isVerified = !isRejected && (c.paymentStatus === 'verified' || (c.paymentVerified && c.paymentStatus !== 'rejected') || c.team?.payment?.status === 'verified')
       const isSubmitted = !isVerified && !isRejected && (
         c.paymentStatus === 'submitted' ||
         c.team?.payment?.status === 'submitted' ||
@@ -1119,14 +1188,17 @@ Track: ${mentor.track || 'All Tracks'}`
               <div className="p-3.5 rounded-lg bg-[#0e1220] border border-slate-800">
                 <span className="text-[10px] font-mono text-slate-400 uppercase block">Total Squads</span>
                 <span className="font-arcade text-2xl text-cyan-400 mt-1 block">
-                  {new Set(candidatesLedger.map((c) => c.teamId)).size}
+                  {Math.max(new Set(candidatesLedger.map((c) => c.teamId).filter(Boolean)).size, teams.length)}
                 </span>
                 <span className="text-[9px] text-slate-500 font-mono">Registered teams</span>
               </div>
               <div className="p-3.5 rounded-lg bg-[#0e1220] border border-emerald-500/30">
                 <span className="text-[10px] font-mono text-emerald-400 uppercase block">Verified &amp; Paid</span>
                 <span className="font-arcade text-2xl text-emerald-400 mt-1 block">
-                  {new Set(candidatesLedger.filter((c) => c.paymentStatus === 'verified' || c.paymentVerified || c.team?.payment?.status === 'verified').map((c) => c.teamId)).size}
+                  {new Set(candidatesLedger.filter((c) => {
+                    const isRej = c.paymentStatus === 'rejected' || c.team?.payment?.status === 'rejected' || c.team?.status === 'rejected'
+                    return !isRej && (c.paymentStatus === 'verified' || (c.paymentVerified && c.paymentStatus !== 'rejected') || c.team?.payment?.status === 'verified')
+                  }).map((c) => c.teamId).filter(Boolean)).size}
                 </span>
                 <span className="text-[9px] text-emerald-500/70 font-mono">Passes issued &amp; emailed</span>
               </div>
@@ -1134,10 +1206,10 @@ Track: ${mentor.track || 'All Tracks'}`
                 <span className="text-[10px] font-mono text-amber-400 uppercase block">Pending Match</span>
                 <span className="font-arcade text-2xl text-amber-400 mt-1 block">
                   {new Set(candidatesLedger.filter((c) => {
-                    const isVer = c.paymentStatus === 'verified' || c.paymentVerified || c.team?.payment?.status === 'verified'
-                    const isRej = !isVer && (c.paymentStatus === 'rejected' || c.team?.payment?.status === 'rejected')
-                    return !isVer && !isRej && (c.paymentStatus === 'submitted' || c.team?.payment?.status === 'submitted' || ((c.utr && c.utr !== 'NOT_SUBMITTED') || (c.paymentReference && c.paymentReference !== 'NOT_SUBMITTED' && c.paymentReference !== 'N/A')))
-                  }).map((c) => c.teamId)).size}
+                    const isRej = c.paymentStatus === 'rejected' || c.team?.payment?.status === 'rejected' || c.team?.status === 'rejected'
+                    const isVer = !isRej && (c.paymentStatus === 'verified' || (c.paymentVerified && c.paymentStatus !== 'rejected') || c.team?.payment?.status === 'verified')
+                    return !isVer && !isRej && (c.paymentStatus === 'submitted' || c.team?.payment?.status === 'submitted' || ((c.utr && c.utr !== 'NOT_SUBMITTED') || (c.paymentReference && c.paymentReference !== 'NOT_SUBMITTED' && c.paymentReference !== 'N/A') || (c.team?.payment?.utr && c.team?.payment?.utr !== 'NOT_SUBMITTED')))
+                  }).map((c) => c.teamId).filter(Boolean)).size}
                 </span>
                 <span className="text-[9px] text-amber-500/70 font-mono">Awaiting UTR match</span>
               </div>
@@ -1145,9 +1217,8 @@ Track: ${mentor.track || 'All Tracks'}`
                 <span className="text-[10px] font-mono text-red-400 uppercase block">✕ Rejected</span>
                 <span className="font-arcade text-2xl text-red-400 mt-1 block">
                   {new Set(candidatesLedger.filter((c) => {
-                    const isVer = c.paymentStatus === 'verified' || c.paymentVerified || c.team?.payment?.status === 'verified'
-                    return !isVer && (c.paymentStatus === 'rejected' || c.team?.payment?.status === 'rejected')
-                  }).map((c) => c.teamId)).size}
+                    return c.paymentStatus === 'rejected' || c.team?.payment?.status === 'rejected' || c.team?.status === 'rejected'
+                  }).map((c) => c.teamId).filter(Boolean)).size}
                 </span>
                 <span className="text-[9px] text-red-400/70 font-mono">Invalid UTR / locked</span>
               </div>
@@ -1219,8 +1290,8 @@ Track: ${mentor.track || 'All Tracks'}`
                     </tr>
                   ) : (
                     filteredCandidates.map((c, idx) => {
-                      const isVerified = c.paymentStatus === 'verified' || c.paymentVerified || c.team?.payment?.status === 'verified'
-                      const isRejected = !isVerified && (c.paymentStatus === 'rejected' || c.team?.payment?.status === 'rejected')
+                      const isRejected = c.paymentStatus === 'rejected' || c.team?.payment?.status === 'rejected' || c.team?.status === 'rejected'
+                      const isVerified = !isRejected && (c.paymentStatus === 'verified' || (c.paymentVerified && c.paymentStatus !== 'rejected') || c.team?.payment?.status === 'verified')
                       const isSubmitted = !isVerified && !isRejected && (c.paymentStatus === 'submitted' || c.team?.payment?.status === 'submitted' || ((c.utr && c.utr !== 'NOT_SUBMITTED') || (c.paymentReference && c.paymentReference !== 'NOT_SUBMITTED' && c.paymentReference !== 'N/A') || (c.team?.payment?.utr && c.team?.payment?.utr !== 'NOT_SUBMITTED')))
                       const isLeader = c.role === 'leader'
 

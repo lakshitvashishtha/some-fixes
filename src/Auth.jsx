@@ -7,6 +7,8 @@ import {
   loginUser,
   logoutUser,
   fetchMe,
+  fetchMyTeams,
+  getAllRegisteredTeams,
   checkEmailApi,
   checkSquadNameApi,
   createTeamApi,
@@ -110,6 +112,7 @@ function Auth() {
 
   // Active session detection
   const [currentUser, setCurrentUser] = useState(null)
+  const [userTeam, setUserTeam] = useState(null)
   const [checkingSession, setCheckingSession] = useState(true)
 
   // Login tabs: 'credentials' | 'partyCode'
@@ -119,14 +122,27 @@ function Auth() {
 
   useEffect(() => {
     fetchMe()
-      .then((data) => {
+      .then(async (data) => {
         if (data?.user?.email) {
           setCurrentUser(data.user)
+          try {
+            const teamsRes = await fetchMyTeams()
+            const list = teamsRes?.teams || []
+            if (list.length > 0) {
+              setUserTeam(list[0])
+            }
+          } catch {
+            // Non-blocking team lookup
+          }
         } else {
           setCurrentUser(null)
+          setUserTeam(null)
         }
       })
-      .catch(() => setCurrentUser(null))
+      .catch(() => {
+        setCurrentUser(null)
+        setUserTeam(null)
+      })
       .finally(() => setCheckingSession(false))
   }, [])
 
@@ -220,6 +236,22 @@ function Auth() {
     try {
       await checkSquadNameApi(squadName.trim())
     } catch (err) {
+      try {
+        const allTeams = getAllRegisteredTeams() || []
+        const existing = allTeams.find(
+          (t) => t.name && t.name.trim().toLowerCase() === squadName.trim().toLowerCase()
+        )
+        if (
+          existing &&
+          (
+            (currentUser && (existing.leaderEmail?.toLowerCase() === currentUser.email?.toLowerCase() || existing.leader?.email?.toLowerCase() === currentUser.email?.toLowerCase())) ||
+            (email && (existing.leaderEmail?.toLowerCase() === email.trim().toLowerCase() || existing.leader?.email?.toLowerCase() === email.trim().toLowerCase()))
+          )
+        ) {
+          setServerError(`You have already registered squad "${existing.name}". Please log in to view your Squad Dashboard or Payment page.`)
+          return
+        }
+      } catch {}
       setServerError(err.message)
       return
     }
@@ -227,7 +259,7 @@ function Auth() {
     // Leader Details
     const leaderAlreadyRegistered = isEmailRegisteredAnywhere(email)
     if (leaderAlreadyRegistered) {
-      setServerError(`Leader email "${email}" is already registered. One email = one registration only.`)
+      setServerError(`Leader email "${email}" is already registered. If this is your squad, please log in with this email to access your squad dashboard.`)
       return
     }
 
@@ -564,33 +596,75 @@ function Auth() {
                   </div>
                   <div>
                     <div className="font-mono font-bold text-xs text-amber-400 uppercase tracking-wider mb-1">
-                      ACTIVE SESSION DETECTED
+                      ACTIVE SQUAD SESSION DETECTED
                     </div>
                     <p className="text-xs text-slate-200 font-mono">
                       You are currently signed in as <strong className="text-tactical">{currentUser.name || currentUser.email}</strong> ({currentUser.email}).
                     </p>
-                    <p className="text-[11px] text-slate-400 font-mono mt-2 leading-relaxed">
-                      Each participant is permitted only one squad registration. You cannot register a new squad while logged in.
+                    {userTeam && (
+                      <div className="mt-3 p-3 rounded-lg bg-[#0a0d16] border border-slate-700/80 text-left text-xs font-mono space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400 text-[11px] uppercase tracking-wider">Your Squad:</span>
+                          <span className="text-cyan-400 font-bold text-sm">{userTeam.name}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400 text-[11px] uppercase tracking-wider">Payment Status:</span>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                            userTeam.payment?.status === 'verified'
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                              : userTeam.payment?.status === 'rejected'
+                              ? 'bg-red-500/20 text-red-300 border border-red-500/40'
+                              : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                          }`}>
+                            {userTeam.payment?.status ? userTeam.payment.status.toUpperCase() : 'UNPAID'}
+                          </span>
+                        </div>
+                        {userTeam.payment?.utr && (
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="text-slate-500">Submitted UTR:</span>
+                            <span className="font-mono text-slate-300">{userTeam.payment.utr}</span>
+                          </div>
+                        )}
+                        {userTeam.tableNumber && (
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="text-slate-500">Assigned Table:</span>
+                            <span className="font-mono text-tactical font-bold">{userTeam.tableNumber}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <p className="text-[11px] text-slate-400 font-mono mt-3 leading-relaxed">
+                      Each candidate is permitted only one squad registration. If you want to view your squad, fix payment, or check admission status, use the options below.
                     </p>
                   </div>
-                  <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                  <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
                     <button
                       type="button"
                       onClick={() => navigate('/dashboard')}
                       className="flex-1 btn-ribbed bg-tactical text-black font-mono font-bold text-xs uppercase py-2.5 rounded-lg shadow"
                     >
-                      GO TO MY DASHBOARD &gt;&gt;
+                      GO TO DASHBOARD &gt;&gt;
                     </button>
+                    {userTeam && userTeam.payment?.status !== 'verified' && (
+                      <button
+                        type="button"
+                        onClick={() => navigate('/payment')}
+                        className="flex-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/50 text-emerald-300 font-mono font-bold text-xs uppercase py-2.5 transition"
+                      >
+                        {userTeam.payment?.status === 'rejected' ? 'RE-SUBMIT UTR &gt;&gt;' : 'VIEW PAYMENT / UTR &gt;&gt;'}
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={async () => {
                         await logoutUser()
                         setCurrentUser(null)
+                        setUserTeam(null)
                         setStep(1)
                       }}
                       className="flex-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/40 text-red-400 font-mono text-xs uppercase py-2.5 transition"
                     >
-                      LOGOUT &amp; REGISTER NEW SQUAD
+                      LOGOUT &amp; SWITCH
                     </button>
                   </div>
                 </div>

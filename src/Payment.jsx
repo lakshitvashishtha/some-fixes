@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { fetchMe, fetchMyTeams, submitPaymentApi } from './api'
+import { fetchMe, fetchMyTeams, submitPaymentApi, getAllRegisteredTeams } from './api'
 
 const UTR_REGEX = /^\d{12}$/
 
@@ -182,6 +182,27 @@ export default function Payment() {
     if (!UTR_REGEX.test(value)) {
       setUtrError('Enter a valid 12-digit UTR / transaction reference')
       return
+    }
+
+    // Client-side quick check against other registered squads
+    try {
+      const existingTeams = getAllRegisteredTeams() || []
+      const duplicate = existingTeams.find(
+        (t) =>
+          String(t.id) !== String(team.id) &&
+          (
+            (t.payment?.utr && String(t.payment.utr).trim().toLowerCase() === value.toLowerCase()) ||
+            (t.payment?.reference && String(t.payment.reference).trim().toLowerCase() === value.toLowerCase()) ||
+            (t.payment_reference && String(t.payment_reference).trim().toLowerCase() === value.toLowerCase()) ||
+            (t.paymentReference && String(t.paymentReference).trim().toLowerCase() === value.toLowerCase())
+          )
+      )
+      if (duplicate) {
+        setUtrError(`This UTR transaction reference has already been submitted by squad "${duplicate.name || 'another squad'}". Each squad must submit a unique payment transaction reference.`)
+        return
+      }
+    } catch {
+      // Non-blocking if storage read fails
     }
 
     setSubmitting(true)

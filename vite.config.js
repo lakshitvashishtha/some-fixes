@@ -199,10 +199,9 @@ function sharedStatePlugin() {
                   mergedOpsState = {
                     ...mergedOpsState,
                     ...incoming.opsState,
-                    tableAssignments: {
-                      ...((mergedOpsState && mergedOpsState.tableAssignments) || {}),
-                      ...((incoming.opsState && incoming.opsState.tableAssignments) || {}),
-                    },
+                    tableAssignments: incoming.opsState.tableAssignments !== undefined
+                      ? incoming.opsState.tableAssignments
+                      : ((mergedOpsState && mergedOpsState.tableAssignments) || {}),
                   };
                 }
 
@@ -212,23 +211,11 @@ function sharedStatePlugin() {
                 }
 
                 // Ensure two-way sync between opsState.tableAssignments and team.tableNumber
-                if (mergedOpsState && mergedOpsState.tableAssignments) {
+                if (mergedOpsState && mergedOpsState.tableAssignments !== undefined) {
                   mergedTeams = mergedTeams.map((t) => {
                     const assigned = mergedOpsState.tableAssignments[t.id];
-                    if (assigned !== undefined) {
-                      return { ...t, tableNumber: assigned || null };
-                    }
-                    return t;
+                    return { ...t, tableNumber: assigned || null };
                   });
-                }
-
-                if (mergedOpsState) {
-                  mergedOpsState.tableAssignments = mergedOpsState.tableAssignments || {};
-                  for (const t of mergedTeams) {
-                    if (t.tableNumber && !mergedOpsState.tableAssignments[t.id]) {
-                      mergedOpsState.tableAssignments[t.id] = t.tableNumber;
-                    }
-                  }
                 }
 
                 const merged = {
@@ -248,6 +235,330 @@ function sharedStatePlugin() {
                 res.end(JSON.stringify({ error: err.message }));
               }
             });
+            return;
+          }
+        }
+
+        // POST /api/ops/verify-payment
+        if (req.url === '/api/ops/verify-payment') {
+          if (req.method === 'POST') {
+            let body = '';
+            req.on('data', (chunk) => { body += chunk; });
+            req.on('end', () => {
+              try {
+                const incoming = JSON.parse(body || '{}');
+                const { teamId, verified, notes } = incoming;
+                const isVerified = verified !== false;
+                const db = readDb();
+                const team = (db.teams || []).find((t) => t.id === teamId || t.code === teamId);
+                if (!team) {
+                  res.statusCode = 404;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'Team not found' }));
+                  return;
+                }
+
+                team.payment = {
+                  ...(team.payment || {}),
+                  status: isVerified ? 'verified' : 'rejected',
+                  verifiedAt: isVerified ? new Date().toISOString() : null,
+                  notes: notes || (isVerified ? 'UTR matched and authorized by Admin' : 'Invalid UTR rejected by admin'),
+                };
+                team.status = isVerified ? 'confirmed' : 'rejected';
+
+                writeDb(db);
+                res.setHeader('Content-Type', 'application/json');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                res.end(JSON.stringify({
+                  success: true,
+                  team,
+                  isVerified,
+                  emailDispatched: isVerified ? {
+                    to: team.leader?.email,
+                    teamName: team.name,
+                    subject: `[CONFIRMED] Codefiesta 5.0 Official Pass Issued — ${team.name}`
+                  } : null
+                }));
+              } catch (err) {
+                res.statusCode = 400;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: err.message }));
+              }
+            });
+            return;
+          }
+        }
+
+        // POST /api/ops/revert-payment
+        if (req.url === '/api/ops/revert-payment') {
+          if (req.method === 'POST') {
+            let body = '';
+            req.on('data', (chunk) => { body += chunk; });
+            req.on('end', () => {
+              try {
+                const incoming = JSON.parse(body || '{}');
+                const { teamId } = incoming;
+                const db = readDb();
+                const team = (db.teams || []).find((t) => t.id === teamId || t.code === teamId);
+                if (!team) {
+                  res.statusCode = 404;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'Team not found' }));
+                  return;
+                }
+
+                team.payment = {
+                  ...(team.payment || {}),
+                  status: 'submitted',
+                  verifiedAt: null,
+                  notes: 'Payment verification reverted by Admin',
+                };
+                team.status = 'registered';
+
+                writeDb(db);
+                res.setHeader('Content-Type', 'application/json');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                res.end(JSON.stringify({ success: true, team }));
+              } catch (err) {
+                res.statusCode = 400;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: err.message }));
+              }
+            });
+            return;
+          }
+        }
+
+        // POST /api/ops/assign-table
+        if (req.url === '/api/ops/assign-table') {
+          if (req.method === 'POST') {
+            let body = '';
+            req.on('data', (chunk) => { body += chunk; });
+            req.on('end', () => {
+              try {
+                const incoming = JSON.parse(body || '{}');
+                const { teamId, tableNumber } = incoming;
+                if (!teamId) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'Team ID is required.' }));
+                  return;
+                }
+
+                const cleanTable = String(tableNumber || '').toUpperCase().trim();
+                const finalTable = cleanTable && cleanTable !== 'UNASSIGNED' && cleanTable !== 'CLEAR' && cleanTable !== 'NONE' ? cleanTable : null;
+
+                const db = readDb();
+                const team = (db.teams || []).find((t) => t.id === teamId || t.code === teamId || (t.name && t.name.toLowerCase() === String(teamId).toLowerCase()));
+                const targetTeamId = team ? team.id : teamId;
+
+                if (team) {
+                  team.tableNumber = finalTable;
+                }
+
+                db.opsState = db.opsState || {};
+                db.opsState.tableAssignments = db.opsState.tableAssignments || {};
+                if (finalTable) {
+                  db.opsState.tableAssignments[targetTeamId] = finalTable;
+                } else {
+                  delete db.opsState.tableAssignments[targetTeamId];
+                  if (team) team.tableNumber = null;
+                }
+
+                writeDb(db);
+                res.setHeader('Content-Type', 'application/json');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                res.end(JSON.stringify({
+                  success: true,
+                  teamId: targetTeamId,
+                  tableNumber: finalTable,
+                  tableAssignments: db.opsState.tableAssignments,
+                }));
+              } catch (err) {
+                res.statusCode = 400;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: err.message }));
+              }
+            });
+            return;
+          }
+        }
+
+        // POST /api/teams/check-name
+        if (req.url === '/api/teams/check-name') {
+          if (req.method === 'POST') {
+            let body = '';
+            req.on('data', (chunk) => { body += chunk; });
+            req.on('end', () => {
+              try {
+                const incoming = JSON.parse(body || '{}');
+                const targetName = String(incoming.name || '').trim().toLowerCase();
+                if (!targetName) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'Squad name is required.' }));
+                  return;
+                }
+                const db = readDb();
+                const taken = (db.teams || []).some((t) => (t.name || '').trim().toLowerCase() === targetName);
+                if (taken) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: `Squad name "${incoming.name}" is already taken by another team. Please choose a unique name.` }));
+                  return;
+                }
+                res.setHeader('Content-Type', 'application/json');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                res.end(JSON.stringify({ available: true }));
+              } catch (err) {
+                res.statusCode = 400;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: err.message }));
+              }
+            });
+            return;
+          }
+        }
+
+        // POST /api/teams/create
+        if (req.url === '/api/teams/create') {
+          if (req.method === 'POST') {
+            let body = '';
+            req.on('data', (chunk) => { body += chunk; });
+            req.on('end', () => {
+              try {
+                const incoming = JSON.parse(body || '{}');
+                const targetName = String(incoming.name || '').trim();
+                if (!targetName) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'Squad name cannot be empty.' }));
+                  return;
+                }
+
+                const db = readDb();
+                const allTeams = db.teams || [];
+
+                if (allTeams.some((t) => (t.name || '').trim().toLowerCase() === targetName.toLowerCase())) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: `Squad name "${targetName}" is already taken by another team. Please choose a unique name.` }));
+                  return;
+                }
+
+                const utr = String(incoming.payment?.utr || incoming.utr || '').trim();
+                if (utr) {
+                  const duplicateUtr = allTeams.find((t) => (t.payment?.utr || '').trim().toLowerCase() === utr.toLowerCase());
+                  if (duplicateUtr) {
+                    res.statusCode = 400;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ error: `UTR "${utr}" has already been submitted by squad "${duplicateUtr.name}". Each squad registration requires a unique payment transaction.` }));
+                    return;
+                  }
+                }
+
+                const newTeam = {
+                  id: 'team_' + Math.random().toString(36).slice(2, 9),
+                  ...incoming,
+                  name: targetName,
+                  status: 'registered',
+                  createdAt: new Date().toISOString(),
+                };
+
+                db.teams = [newTeam, ...allTeams];
+                writeDb(db);
+
+                res.setHeader('Content-Type', 'application/json');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                res.end(JSON.stringify({ success: true, team: newTeam }));
+              } catch (err) {
+                res.statusCode = 400;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: err.message }));
+              }
+            });
+            return;
+          }
+        }
+
+        // POST /api/teams/:teamId/payment
+        if (req.method === 'POST' && req.url?.includes('/payment') && req.url?.startsWith('/api/teams/')) {
+          let body = '';
+          req.on('data', (chunk) => { body += chunk; });
+          req.on('end', () => {
+            try {
+              const incoming = JSON.parse(body || '{}');
+              const teamId = req.url.split('?')[0].replace('/api/teams/', '').replace('/payment', '').split('/')[0];
+              const cleanUtr = String(incoming.utr || '').trim();
+
+              const db = readDb();
+              const allTeams = db.teams || [];
+              const team = allTeams.find((t) => t.id === teamId || t.code === teamId);
+
+              if (!team) {
+                res.statusCode = 404;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: 'Team not found' }));
+                return;
+              }
+
+              if (cleanUtr) {
+                const duplicateTeam = allTeams.find((t) =>
+                  t.id !== team.id &&
+                  t.code !== team.id &&
+                  (t.payment?.utr || '').trim().toLowerCase() === cleanUtr.toLowerCase()
+                );
+                if (duplicateTeam) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({
+                    error: `UTR "${cleanUtr}" has already been submitted by squad "${duplicateTeam.name}". Each squad registration requires a unique payment transaction.`
+                  }));
+                  return;
+                }
+              }
+
+              team.payment = {
+                ...(team.payment || {}),
+                status: 'submitted',
+                utr: cleanUtr,
+                amount: team.payment?.amount || 800,
+                submittedAt: new Date().toISOString(),
+                notes: null,
+              };
+              if (team.status === 'rejected') {
+                team.status = 'registered';
+              }
+
+              writeDb(db);
+              res.setHeader('Content-Type', 'application/json');
+              res.setHeader('Access-Control-Allow-Origin', '*');
+              res.end(JSON.stringify({ success: true, payment: team.payment, team }));
+            } catch (err) {
+              res.statusCode = 400;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
+          return;
+        }
+
+        // GET /api/teams/my
+        if (req.url === '/api/teams/my' || req.url?.startsWith('/api/teams/my?')) {
+          if (req.method === 'GET') {
+            const userEmail = (req.headers['x-user-email'] || '').toLowerCase().trim();
+            const db = readDb();
+            const myTeams = (db.teams || []).filter((t) => {
+              if (!userEmail) return true;
+              return (
+                t.leader?.email?.toLowerCase() === userEmail ||
+                t.leader_email?.toLowerCase() === userEmail ||
+                (t.members || []).some((m) => m.email?.toLowerCase() === userEmail)
+              );
+            });
+            res.setHeader('Content-Type', 'application/json');
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.end(JSON.stringify({ success: true, teams: myTeams }));
             return;
           }
         }
