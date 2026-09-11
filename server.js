@@ -11,8 +11,59 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const app = express()
+app.disable('x-powered-by')
+
 const PORT = process.env.PORT || 4000
 const ADMIN_VAULT_KEY = process.env.ADMIN_VAULT_KEY || 'cf5_master_access_2026'
+
+// Basic Security Headers Middleware
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN')
+  res.setHeader('X-XSS-Protection', '1; mode=block')
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+  next()
+})
+
+// Rate Limiting (In-Memory IP sliding window for anti-abuse and anti-DDoS)
+const rateLimitMap = new Map()
+
+// Clean up stale IP records every 5 minutes
+setInterval(() => {
+  const now = Date.now()
+  for (const [key, data] of rateLimitMap.entries()) {
+    if (now > data.resetTime) {
+      rateLimitMap.delete(key)
+    }
+  }
+}, 300000)
+
+const createRateLimiter = (maxRequests = 300, windowMs = 60000, message = 'Rate limit exceeded. Please wait a moment.') => {
+  return (req, res, next) => {
+    const ip = (req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || 'unknown-ip').trim()
+    const now = Date.now()
+    const record = rateLimitMap.get(ip) || { count: 0, resetTime: now + windowMs }
+
+    if (now > record.resetTime) {
+      record.count = 1
+      record.resetTime = now + windowMs
+    } else {
+      record.count += 1
+    }
+
+    rateLimitMap.set(ip, record)
+
+    if (record.count > maxRequests) {
+      res.setHeader('Retry-After', Math.ceil((record.resetTime - now) / 1000))
+      return res.status(429).json({ error: message })
+    }
+
+    next()
+  }
+}
+
+const authLimiter = createRateLimiter(30, 60000, 'Too many login or registration attempts. Please wait 1 minute before trying again.')
+const apiLimiter = createRateLimiter(600, 60000, 'Too many requests. Please slow down.')
 
 // Setup CORS: reflect origin or allow all
 app.use(cors({
@@ -48,20 +99,38 @@ const writeLocalDb = (data) => {
   }
 }
 
-// TiDB MySQL Pool initialization
+// In-Memory Read Cache for 1000+ Concurrent Users (TTL: 2.5 seconds)
+// Dramatically reduces TiDB queries under peak load while maintaining real-time feel
+let storeCache = null
+let storeCacheExpiry = 0
+
+const invalidateStoreCache = () => {
+  storeCache = null
+  storeCacheExpiry = 0
+}
+
+// TiDB MySQL Pool initialization (Tuned for 1000+ load handling)
 let pool = null
 let useTiDB = false
 
 if (process.env.TIDB_HOST || process.env.DATABASE_URL) {
   try {
     const mysql = await import('mysql2/promise')
+    const poolConfig = {
+      ssl: { minVersion: 'TLSv1.2', rejectUnauthorized: true },
+      waitForConnections: true,
+      connectionLimit: 25,
+      maxIdle: 15,
+      idleTimeout: 60000,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 10000,
+      queueLimit: 0
+    }
+
     if (process.env.DATABASE_URL) {
       pool = mysql.createPool({
         uri: process.env.DATABASE_URL,
-        ssl: { minVersion: 'TLSv1.2', rejectUnauthorized: true },
-        waitForConnections: true,
-        connectionLimit: 10,
-        queueLimit: 0
+        ...poolConfig
       })
     } else {
       pool = mysql.createPool({
@@ -70,10 +139,7 @@ if (process.env.TIDB_HOST || process.env.DATABASE_URL) {
         user: process.env.TIDB_USER,
         password: process.env.TIDB_PASSWORD,
         database: process.env.TIDB_DATABASE || 'codefiesta_db',
-        ssl: { minVersion: 'TLSv1.2', rejectUnauthorized: true },
-        waitForConnections: true,
-        connectionLimit: 10,
-        queueLimit: 0
+        ...poolConfig
       })
     }
 
@@ -112,9 +178,17 @@ if (process.env.TIDB_HOST || process.env.DATABASE_URL) {
 }
 
 // Unified Store Helpers
-async function getFullStore() {
+async function getFullStore(forceRefresh = false) {
+  if (!forceRefresh && storeCache && Date.now() < storeCacheExpiry) {
+    return storeCache
+  }
+
   const local = readLocalDb()
-  if (!useTiDB || !pool) return local
+  if (!useTiDB || !pool) {
+    storeCache = local
+    storeCacheExpiry = Date.now() + 2500
+    return local
+  }
 
   try {
     const [opsRows] = await pool.query('SELECT state_key, state_val FROM ops_state')
@@ -199,20 +273,46 @@ async function getFullStore() {
       }
     })
 
-    return {
+    const result = {
       teams: teams.length > 0 ? teams : local.teams || [],
       users: users.length > 0 ? users : local.users || [],
       opsState: Object.keys(opsState).length > 0 ? opsState : local.opsState,
       problemStatements: problemStatements || local.problemStatements
     }
+    storeCache = result
+    storeCacheExpiry = Date.now() + 2500
+    return result
   } catch (err) {
     console.error('Error querying TiDB:', err.message)
     return local
   }
 }
 
+// Sanitizes store data to prevent password and sensitive data leaks over public API
+function sanitizeForPublic(store) {
+  if (!store) return store
+  return {
+    ...store,
+    // Strictly strip plain text passwords
+    users: (store.users || []).map(u => ({
+      id: u.id,
+      email: u.email,
+      firstName: u.firstName,
+      lastName: u.lastName,
+      college: u.college,
+      course: u.course,
+      year: u.year,
+      gender: u.gender
+    })),
+    teams: store.teams || [],
+    opsState: store.opsState || {},
+    problemStatements: store.problemStatements || []
+  }
+}
+
 async function saveFullStore(incoming) {
-  const current = await getFullStore()
+  invalidateStoreCache()
+  const current = await getFullStore(true)
 
   const wipe = incoming.wipe === true || incoming.wipeTeams === true
   let mergedTeams = current.teams || []
@@ -427,26 +527,37 @@ app.get('/api/ping', (req, res) => res.status(200).send('pong'))
 app.get('/ping', (req, res) => res.status(200).send('pong'))
 
 // Shared Store Sync
-app.get('/api/shared-store', async (req, res) => {
+app.get('/api/shared-store', apiLimiter, async (req, res) => {
   try {
     const data = await getFullStore()
-    res.json({ success: true, data })
+    res.json({ success: true, data: sanitizeForPublic(data) })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })
 
-app.post('/api/shared-store', async (req, res) => {
+app.post('/api/shared-store', apiLimiter, async (req, res) => {
   try {
-    const updated = await saveFullStore(req.body || {})
-    res.json({ success: true, data: updated })
+    const incoming = req.body || {}
+    const isWipe = incoming.wipe === true || incoming.wipeTeams === true || incoming.wipeUsers === true
+
+    // Security Check: Protect destructive operations
+    if (isWipe) {
+      const key = req.headers['x-vault-passkey'] || incoming.passkey
+      if (key !== ADMIN_VAULT_KEY) {
+        return res.status(403).json({ error: 'Unauthorized: Admin Vault Key required for wiping database.' })
+      }
+    }
+
+    const updated = await saveFullStore(incoming)
+    res.json({ success: true, data: sanitizeForPublic(updated) })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })
 
-// Auth: Register
-app.post('/api/auth/register', async (req, res) => {
+// Auth: Register (Protected by auth rate limiter)
+app.post('/api/auth/register', authLimiter, async (req, res) => {
   try {
     const body = req.body || {}
     const email = (body.email || '').toLowerCase().trim()
@@ -472,14 +583,16 @@ app.post('/api/auth/register', async (req, res) => {
     }
 
     await saveFullStore({ users: [...store.users, newUser] })
-    res.json({ success: true, user: newUser })
+    const safeUser = { ...newUser }
+    delete safeUser.password
+    res.json({ success: true, user: safeUser })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })
 
-// Auth: Login
-app.post('/api/auth/login', async (req, res) => {
+// Auth: Login (Protected by auth rate limiter)
+app.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body || {}
     const store = await getFullStore()
@@ -494,14 +607,16 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid password. Please check your credentials.' })
     }
 
-    res.json({ success: true, user })
+    const safeUser = { ...user }
+    delete safeUser.password
+    res.json({ success: true, user: safeUser })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })
 
 // Auth: Check Email
-app.post('/api/auth/check-email', async (req, res) => {
+app.post('/api/auth/check-email', authLimiter, async (req, res) => {
   try {
     const { email } = req.body || {}
     const store = await getFullStore()
@@ -513,7 +628,7 @@ app.post('/api/auth/check-email', async (req, res) => {
 })
 
 // Auth: Request Password Reset
-app.post('/api/auth/request-password-reset', async (req, res) => {
+app.post('/api/auth/request-password-reset', authLimiter, async (req, res) => {
   try {
     const { email } = req.body || {}
     console.log(`[PASSWORD RESET REQUEST] for candidate: ${email}`)
@@ -524,7 +639,7 @@ app.post('/api/auth/request-password-reset', async (req, res) => {
 })
 
 // Teams: All & My
-app.get('/api/teams/all', async (req, res) => {
+app.get('/api/teams/all', apiLimiter, async (req, res) => {
   try {
     const store = await getFullStore()
     res.json({ success: true, teams: store.teams || [] })

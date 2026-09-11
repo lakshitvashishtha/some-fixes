@@ -26,6 +26,7 @@ import {
   reinstateAttendeeApi,
   updateProblemStatementsApi,
   DEFAULT_PROBLEM_STATEMENTS,
+  getApiOrigin,
 } from './api'
 import { QRCodeSvg } from './qrGenerator.jsx'
 
@@ -2823,10 +2824,13 @@ Track: ${mentor.track || 'All Tracks'}`
                   keysToWipe.forEach((k) => { try { localStorage.removeItem(k) } catch {} })
                   // Push empty teams+users to shared store
                   try {
-                    await fetch('/api/shared-store', {
+                    await fetch(`${getApiOrigin()}/api/shared-store`, {
                       method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ wipe: true, teams: [], users: [] }),
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'x-vault-passkey': ADMIN_VAULT_KEY
+                      },
+                      body: JSON.stringify({ wipe: true, teams: [], users: [], passkey: ADMIN_VAULT_KEY }),
                     })
                   } catch {}
                   setNotice('✅ All registration and user data wiped. Shared store cleared. Mentors, coordinators, and announcements preserved.')

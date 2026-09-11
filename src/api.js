@@ -1,5 +1,12 @@
 import { BACKEND_URL } from './config.js'
 
+export const getApiOrigin = () => {
+  if (BACKEND_URL && !BACKEND_URL.startsWith('/') && !BACKEND_URL.includes('localhost') && !BACKEND_URL.includes('127.0.0.1')) {
+    return BACKEND_URL.replace(/\/+$/, '')
+  }
+  return typeof window !== 'undefined' && window.location ? window.location.origin : 'http://localhost:5173'
+}
+
 // Hard Roster Edit Cut-off: September 30, 2026 23:59:59 IST
 export const ROSTER_EDIT_DEADLINE = new Date('2026-09-30T23:59:59').getTime()
 
@@ -131,7 +138,7 @@ export function mergeMembers(membersA = [], membersB = []) {
 export async function syncWithSharedStore(forceOverwrite = false) {
   if (typeof fetch === 'undefined') return
   try {
-    const origin = typeof window !== 'undefined' && window.location ? window.location.origin : 'http://localhost:5173'
+    const origin = getApiOrigin()
     // Cache buster ensures we always fetch the newest data from shared_db.json / server
     const res = await fetch(`${origin}/api/shared-store?_t=${Date.now()}`, {
       cache: 'no-store',
@@ -270,7 +277,7 @@ export async function syncWithSharedStore(forceOverwrite = false) {
 export async function pushToSharedStore(payload) {
   if (typeof fetch === 'undefined') return
   try {
-    const origin = typeof window !== 'undefined' && window.location ? window.location.origin : 'http://localhost:5173'
+    const origin = getApiOrigin()
     const res = await fetch(`${origin}/api/shared-store`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
