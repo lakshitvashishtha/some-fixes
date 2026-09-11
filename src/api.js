@@ -295,7 +295,16 @@ export const DEFAULT_PROBLEM_STATEMENTS = [
     tagline: 'Autonomous multi-agent workflows, code synthesis, & fine-tuned LLMs',
     brief:
       'Design autonomous software agents capable of multi-step reasoning, real-time environment interaction, and tool-augmented problem solving. Focus on developer productivity, cognitive task automation, or adaptive AI copilots.',
-    deliverables: ['Working agent loop / architecture', 'Tool-calling demo', 'Eval benchmark or real-world use case'],
+    problemStatements: [
+      'AI-Based early warning and landslide Risk Monitoring System in NER',
+      'AI-Based Smart Logistics and Accessibility Intelligence Platform for North Eastern Region (NER)',
+      'AI-Based Cognitive Gaming and Memory Assistance Platform for Elderly Dementia Patients in North Eastern Region (NER)',
+    ],
+    deliverables: [
+      'AI-Based early warning and landslide Risk Monitoring System in NER',
+      'AI-Based Smart Logistics and Accessibility Intelligence Platform for North Eastern Region (NER)',
+      'AI-Based Cognitive Gaming and Memory Assistance Platform for Elderly Dementia Patients in North Eastern Region (NER)',
+    ],
   },
   {
     id: 'web3_defi',
@@ -304,7 +313,16 @@ export const DEFAULT_PROBLEM_STATEMENTS = [
     tagline: 'Cross-chain protocols, smart contracts, ZK-proofs & digital ownership',
     brief:
       'Build trustless decentralized applications leveraging blockchain primitives. Solutions can span cross-chain asset bridging, account abstraction, privacy-preserving zero-knowledge proofs, or decentralized physical infrastructure (DePIN).',
-    deliverables: ['Verified smart contract repo', 'Frontend dApp integration', 'Testnet deployment / transaction proof'],
+    problemStatements: [
+      'Trustless cross-chain decentralized carbon credit verification and trading registry',
+      'Account abstraction (ERC-4337) smart wallet for seamless Web3 citizen onboarding',
+      'DePIN sensor network protocol for decentralized air quality monitoring & telemetry',
+    ],
+    deliverables: [
+      'Trustless cross-chain decentralized carbon credit verification and trading registry',
+      'Account abstraction (ERC-4337) smart wallet for seamless Web3 citizen onboarding',
+      'DePIN sensor network protocol for decentralized air quality monitoring & telemetry',
+    ],
   },
   {
     id: 'govtech_mobility',
@@ -313,7 +331,16 @@ export const DEFAULT_PROBLEM_STATEMENTS = [
     tagline: 'Civic grievance AI, public safety, traffic intelligence & smart transit',
     brief:
       'Harness real-time computer vision, IoT telemetry, and conversational AI to transform urban governance and civic infrastructure. Tackle road accident hotspot prevention, pothole detection, or automated municipal service delivery.',
-    deliverables: ['Real-time telemetry / vision pipeline', 'Citizen or admin dashboard', 'Municipal impact model'],
+    problemStatements: [
+      'Solar-Powered Smart Mini Cold Storage System for Fresh Vegetables in North Eastern Region (NER)',
+      'AI-Driven automated civic grievance classification, geotagging, and emergency dispatch optimizer',
+      'Edge vision system for road safety accident hotspot prediction and highway pothole telemetry',
+    ],
+    deliverables: [
+      'Solar-Powered Smart Mini Cold Storage System for Fresh Vegetables in North Eastern Region (NER)',
+      'AI-Driven automated civic grievance classification, geotagging, and emergency dispatch optimizer',
+      'Edge vision system for road safety accident hotspot prediction and highway pothole telemetry',
+    ],
   },
   {
     id: 'cybersecurity',
@@ -322,7 +349,16 @@ export const DEFAULT_PROBLEM_STATEMENTS = [
     tagline: 'Threat detection, automated vulnerability triage & cryptography',
     brief:
       'Engineer defensive tools for modern attack surfaces. Build proactive threat intelligence pipelines, automated SIEM triage, quantum-safe encryption utilities, or runtime application security protection.',
-    deliverables: ['Security audit / attack emulation script', 'Detection rule set / scanner', 'Interactive SOC HUD'],
+    problemStatements: [
+      'Automated zero-day vulnerability triage and dynamic software fuzzing harness',
+      'Proactive DNS threat intelligence & malware command-and-control beacon detector',
+      'Quantum-safe encryption communication bridge for critical SCADA infrastructure',
+    ],
+    deliverables: [
+      'Automated zero-day vulnerability triage and dynamic software fuzzing harness',
+      'Proactive DNS threat intelligence & malware command-and-control beacon detector',
+      'Quantum-safe encryption communication bridge for critical SCADA infrastructure',
+    ],
   },
   {
     id: 'fintech_fraud',
@@ -331,7 +367,16 @@ export const DEFAULT_PROBLEM_STATEMENTS = [
     tagline: 'Instant payment rails, anomaly detection on UPI, & credit scoring',
     brief:
       'Revolutionize payments and financial inclusion. Build real-time graph-based anomaly detection on high-frequency transaction streams, automated financial advisory for underbanked populations, or micro-insurance primitives.',
-    deliverables: ['Stream-processing fraud detector', 'Simulated transaction test suite', 'Latency & recall metrics'],
+    problemStatements: [
+      'Development of an Intelligent Freight Forecasting Model for Optimized Vessel Chartering and Bulk Cargo Procurement from overseas to East Coast of India',
+      'Real-time graph-based anomaly detector on high-frequency UPI transaction rails',
+      'Decentralized micro-lending credit scoring engine for unbanked regional artisans',
+    ],
+    deliverables: [
+      'Development of an Intelligent Freight Forecasting Model for Optimized Vessel Chartering and Bulk Cargo Procurement from overseas to East Coast of India',
+      'Real-time graph-based anomaly detector on high-frequency UPI transaction rails',
+      'Decentralized micro-lending credit scoring engine for unbanked regional artisans',
+    ],
   },
   {
     id: 'healthcare_biotech',
@@ -340,7 +385,16 @@ export const DEFAULT_PROBLEM_STATEMENTS = [
     tagline: 'Diagnostic AI, telemedicine, telemetry & accessibility tools',
     brief:
       'Create technology that saves lives and improves health outcomes. Develop AI-assisted diagnostic assistants, wearable health telemetry pipelines, EHR interoperability protocols, or assistive devices for differently-abled individuals.',
-    deliverables: ['Validated ML diagnostic pipeline', 'Patient / practitioner UI', 'Clinical accuracy assessment'],
+    problemStatements: [
+      'AI-Assisted Early Detection System for Osteoarthritis (OA) Risk Markers in North Eastern Region (NER)',
+      'Wearable non-invasive biometric telemetry pipeline for remote mountain health centers',
+      'Automated multi-lingual AI clinical screening kiosk for rural public dispensaries',
+    ],
+    deliverables: [
+      'AI-Assisted Early Detection System for Osteoarthritis (OA) Risk Markers in North Eastern Region (NER)',
+      'Wearable non-invasive biometric telemetry pipeline for remote mountain health centers',
+      'Automated multi-lingual AI clinical screening kiosk for rural public dispensaries',
+    ],
   },
   {
     id: 'open_innovation',
@@ -349,7 +403,16 @@ export const DEFAULT_PROBLEM_STATEMENTS = [
     tagline: 'Radical, unconstrained solutions solving any high-impact challenge',
     brief:
       'Have an out-of-the-box breakthrough that defies categorization? Build any high-leverage technical innovation spanning space tech, clean energy, quantum computing, or consumer applications.',
-    deliverables: ['End-to-end prototype', 'High-impact value proposition', 'GitHub repository & live demo'],
+    problemStatements: [
+      'Autonomous drone swarm mesh protocol for disaster reconnaissance in dense forest and mountain terrain',
+      'Low-cost software-defined ground station receiver for open satellite weather and agricultural telemetry',
+      'High-throughput edge computing platform for distributed precision agriculture diagnostics',
+    ],
+    deliverables: [
+      'Autonomous drone swarm mesh protocol for disaster reconnaissance in dense forest and mountain terrain',
+      'Low-cost software-defined ground station receiver for open satellite weather and agricultural telemetry',
+      'High-throughput edge computing platform for distributed precision agriculture diagnostics',
+    ],
   },
 ]
 

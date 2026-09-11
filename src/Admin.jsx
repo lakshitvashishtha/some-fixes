@@ -601,16 +601,19 @@ Track: ${mentor.track || 'All Tracks'}`
       icon: '💡',
       tagline: '',
       brief: '',
-      deliverables: 'Working Prototype / GitHub Repo, Architecture Diagram, Demo Video',
+      problemStatementsText: 'AI-Based early warning and landslide Risk Monitoring System in NER\nAI-Based Smart Logistics and Accessibility Intelligence Platform for North Eastern Region (NER)\nSolar-Powered Smart Mini Cold Storage System for Fresh Vegetables in NER',
       isNew: true,
     })
   }
 
   const handleEditProblemTrack = (track) => {
     setIsTracksDirty(true)
+    const list = Array.isArray(track.problemStatements) && track.problemStatements.length > 0
+      ? track.problemStatements
+      : (Array.isArray(track.deliverables) ? track.deliverables : [])
     setTrackModalData({
       ...track,
-      deliverables: Array.isArray(track.deliverables) ? track.deliverables.join(', ') : (track.deliverables || ''),
+      problemStatementsText: list.join('\n'),
       isNew: false,
     })
   }
@@ -623,9 +626,25 @@ Track: ${mentor.track || 'All Tracks'}`
       return
     }
 
-    const delivs = typeof trackModalData.deliverables === 'string'
-      ? trackModalData.deliverables.split(',').map((s) => s.trim()).filter(Boolean)
-      : (trackModalData.deliverables || [])
+    const raw = trackModalData.problemStatementsText !== undefined
+      ? trackModalData.problemStatementsText
+      : (trackModalData.problemStatements
+          ? (Array.isArray(trackModalData.problemStatements) ? trackModalData.problemStatements.join('\n') : trackModalData.problemStatements)
+          : (Array.isArray(trackModalData.deliverables) ? trackModalData.deliverables.join('\n') : (trackModalData.deliverables || '')))
+
+    const statements = typeof raw === 'string'
+      ? (raw.includes('\n')
+          ? raw.split('\n').map((s) => s.trim()).filter(Boolean)
+          : raw.split(',').map((s) => s.trim()).filter(Boolean))
+      : (Array.isArray(raw) ? raw : [])
+
+    const finalStatements = statements.length > 0
+      ? statements
+      : [
+          'AI-Based early warning and landslide Risk Monitoring System in NER',
+          'AI-Based Smart Logistics and Accessibility Intelligence Platform for North Eastern Region (NER)',
+          'Solar-Powered Smart Mini Cold Storage System for Fresh Vegetables in North Eastern Region (NER)'
+        ]
 
     const formatted = {
       id: trackModalData.id || ('track_' + Date.now().toString(36)),
@@ -633,7 +652,8 @@ Track: ${mentor.track || 'All Tracks'}`
       icon: trackModalData.icon.trim() || '💡',
       tagline: trackModalData.tagline.trim(),
       brief: trackModalData.brief.trim(),
-      deliverables: delivs.length > 0 ? delivs : ['Working Prototype / GitHub Repo', 'Architecture Diagram', 'Demo Video'],
+      problemStatements: finalStatements,
+      deliverables: finalStatements,
     }
 
     let updatedList
@@ -1689,7 +1709,7 @@ Track: ${mentor.track || 'All Tracks'}`
                   ACTIVE PROBLEM TRACKS ({problemTracks.length})
                 </h3>
                 <span className="text-[10px] text-slate-500 font-mono">
-                  Click &quot;Edit&quot; to modify problem descriptions and deliverables
+                  Click &quot;Edit&quot; to modify problem statements, titles and descriptions
                 </span>
               </div>
 
@@ -1776,19 +1796,29 @@ Track: ${mentor.track || 'All Tracks'}`
                           </div>
 
                           <div>
-                            <label className="text-[9px] uppercase text-slate-400 block mb-1">
-                              Deliverables (comma separated)
+                            <label className="text-[9px] uppercase text-tactical block mb-1 font-bold">
+                              Problem Statements (one per line or comma separated)
                             </label>
-                            <input
-                              type="text"
-                              value={Array.isArray(editingTrack.deliverables) ? editingTrack.deliverables.join(', ') : ''}
-                              onChange={(e) =>
+                            <textarea
+                              rows={3}
+                              value={
+                                Array.isArray(editingTrack.problemStatements)
+                                  ? editingTrack.problemStatements.join('\n')
+                                  : (Array.isArray(editingTrack.deliverables) ? editingTrack.deliverables.join('\n') : (editingTrack.deliverables || ''))
+                              }
+                              onChange={(e) => {
+                                const val = e.target.value
+                                const list = val.includes('\n')
+                                  ? val.split('\n').map((s) => s.trim()).filter(Boolean)
+                                  : val.split(',').map((s) => s.trim()).filter(Boolean)
                                 setEditingTrack({
                                   ...editingTrack,
-                                  deliverables: e.target.value.split(',').map((s) => s.trim()).filter(Boolean),
+                                  problemStatements: list,
+                                  deliverables: list,
                                 })
-                              }
-                              className="w-full px-2.5 py-1.5 rounded bg-[#090b14] border border-slate-700 text-xs text-white font-mono"
+                              }}
+                              className="w-full px-2.5 py-1.5 rounded bg-[#090b14] border border-slate-700 text-xs text-white font-mono leading-relaxed"
+                              placeholder="e.g. AI-Based early warning and landslide Risk Monitoring System in NER"
                             />
                           </div>
                         </div>
@@ -1821,14 +1851,17 @@ Track: ${mentor.track || 'All Tracks'}`
                             </p>
                           </div>
 
-                          {Array.isArray(track.deliverables) && track.deliverables.length > 0 && (
+                          {((Array.isArray(track.problemStatements) && track.problemStatements.length > 0) || (Array.isArray(track.deliverables) && track.deliverables.length > 0)) && (
                             <div className="pt-2 border-t border-slate-800/80">
-                              <span className="text-[9px] font-arcade uppercase text-slate-500 block mb-1">
-                                Key Deliverables:
+                              <span className="text-[9px] font-arcade uppercase text-tactical block mb-1">
+                                Problem Statements ({((track.problemStatements || track.deliverables || []).length)}):
                               </span>
-                              <ul className="text-[10px] text-slate-400 space-y-0.5 list-disc list-inside">
-                                {track.deliverables.map((d, i) => (
-                                  <li key={i} className="truncate">{d}</li>
+                              <ul className="text-[10px] text-slate-300 space-y-1 font-mono">
+                                {(track.problemStatements || track.deliverables || []).map((ps, i) => (
+                                  <li key={i} className="flex items-start gap-1.5 leading-snug">
+                                    <span className="text-tactical shrink-0">▸</span>
+                                    <span>{ps}</span>
+                                  </li>
                                 ))}
                               </ul>
                             </div>
@@ -1934,12 +1967,14 @@ Track: ${mentor.track || 'All Tracks'}`
                           </p>
                         </div>
 
-                        {Array.isArray(track.deliverables) && track.deliverables.length > 0 && (
-                          <div className="pt-3 border-t border-slate-800 space-y-1">
-                            <span className="text-[10px] font-arcade text-slate-400 uppercase">Deliverables:</span>
-                            <ul className="text-[11px] text-slate-300 list-disc list-inside space-y-0.5">
-                              {track.deliverables.map((d, di) => (
-                                <li key={di}>{d}</li>
+                        {((Array.isArray(track.problemStatements) && track.problemStatements.length > 0) || (Array.isArray(track.deliverables) && track.deliverables.length > 0)) && (
+                          <div className="pt-3 border-t border-slate-800 space-y-1.5">
+                            <span className="text-[10px] font-arcade text-tactical uppercase font-bold flex items-center gap-1.5">
+                              <span>🎯</span> PROBLEM STATEMENTS:
+                            </span>
+                            <ul className="text-[11px] text-slate-200 space-y-1 font-mono list-disc list-inside">
+                              {(track.problemStatements || track.deliverables || []).map((ps, di) => (
+                                <li key={di} className="leading-snug">{ps}</li>
                               ))}
                             </ul>
                           </div>
@@ -3366,15 +3401,26 @@ Track: ${mentor.track || 'All Tracks'}`
               </div>
 
               <div>
-                <label className="text-[10px] uppercase text-slate-400 block mb-1 font-bold">
-                  Key Deliverables (comma separated)
-                </label>
-                <input
-                  type="text"
-                  value={trackModalData.deliverables}
-                  onChange={(e) => setTrackModalData({ ...trackModalData, deliverables: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg bg-[#161a28] border border-slate-700 text-xs text-white"
-                  placeholder="e.g. Working Prototype, GitHub Repo, Architecture Diagram, Demo Video"
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[10px] uppercase text-tactical block font-bold">
+                    Problem Statements (one per line or comma separated)
+                  </label>
+                  <span className="text-[9px] font-mono text-slate-400">Listed as challenges on Dashboard</span>
+                </div>
+                <textarea
+                  rows={4}
+                  value={
+                    trackModalData.problemStatementsText !== undefined
+                      ? trackModalData.problemStatementsText
+                      : (Array.isArray(trackModalData.problemStatements)
+                          ? trackModalData.problemStatements.join('\n')
+                          : (Array.isArray(trackModalData.deliverables)
+                              ? trackModalData.deliverables.join('\n')
+                              : (trackModalData.deliverables || '')))
+                  }
+                  onChange={(e) => setTrackModalData({ ...trackModalData, problemStatementsText: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg bg-[#161a28] border border-slate-700 text-xs text-white font-mono leading-relaxed"
+                  placeholder="e.g.&#10;AI-Based early warning and landslide Risk Monitoring System in NER&#10;AI-Based Smart Logistics and Accessibility Intelligence Platform for North Eastern Region (NER)&#10;Solar-Powered Smart Mini Cold Storage System for Fresh Vegetables in NER"
                 />
               </div>
 
