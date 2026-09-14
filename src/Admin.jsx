@@ -52,17 +52,47 @@ function buildCandidatesFromTeams(teams = []) {
   for (const t of teams) {
     const leaderCollege = t.leader?.college || t.college || 'Global Institute of Technology, Jaipur'
     const leaderName = t.leader?.name || (t.leader?.firstName ? `${t.leader.firstName} ${t.leader.lastName || ''}`.trim() : 'Leader')
-    const members = Array.isArray(t.members) && t.members.length > 0 ? t.members : [
-      {
+    const leaderEmail = (t.leader?.email || t.leader_email || t.leaderEmail || '').toLowerCase().trim()
+    const members = []
+
+    // 1. Always include squad leader first
+    if (t.leader || leaderEmail) {
+      members.push({
+        id: t.leader?.id || ('mem_leader_' + t.id),
+        name: leaderName,
+        firstName: t.leader?.firstName || '',
+        lastName: t.leader?.lastName || '',
+        email: leaderEmail,
+        phone: t.leader?.phone || '',
+        college: leaderCollege,
+        role: 'leader',
+        status: 'accepted',
+        isConfirmed: true,
+      })
+    }
+
+    // 2. Append all squad teammates (excluding duplicate leader entry)
+    for (const m of (t.members || [])) {
+      const mEmail = (m.email || '').toLowerCase().trim()
+      if (mEmail && mEmail === leaderEmail) continue
+      members.push({
+        ...m,
+        role: m.role || 'member',
+        college: m.college || leaderCollege,
+      })
+    }
+
+    if (members.length === 0) {
+      members.push({
         id: 'mem_leader_' + t.id,
         name: leaderName,
-        email: t.leader?.email || t.leader_email,
+        email: leaderEmail,
         phone: t.leader?.phone,
         college: leaderCollege,
         role: 'leader',
-        status: 'accepted'
-      }
-    ]
+        status: 'accepted',
+      })
+    }
     for (const m of members) {
       const isLeader = m.role === 'leader' || (t.leader?.email && m.email?.toLowerCase() === t.leader?.email?.toLowerCase())
       const isConfirmed = isLeader || m.status === 'accepted' || m.status === 'confirmed'

@@ -1,5 +1,5 @@
 import { QRCodeSvg } from './qrGenerator.jsx'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   fetchMe,
@@ -2032,21 +2032,53 @@ function TeamCard({ team, user, assignedTable, setTeams, onReload }) {
     lastName: '',
     email: '',
     phone: '',
-    college: '',
-    rollNumber: '',
-    course: 'B.Tech CSE',
-    year: '1st',
-    gender: 'male',
   })
   const [memberActionMsg, setMemberActionMsg] = useState('')
   const [memberSubmitting, setMemberSubmitting] = useState(false)
 
-  const isLeader = team.leader?.email?.toLowerCase() === user.email?.toLowerCase() || team.isLeaderForThisTeam
+  const leaderEmail = (team.leader?.email || team.leader_email || team.leaderEmail || '').toLowerCase().trim()
+  const leaderName = team.leader?.name || (team.leader?.firstName ? `${team.leader.firstName} ${team.leader.lastName || ''}`.trim() : 'Squad Leader')
+  const leaderCollege = team.leader?.college || team.college || 'GIT'
+
+  // Full squad roster: ALWAYS includes Leader as first member, followed by teammates
+  const fullRoster = useMemo(() => {
+    const list = []
+    if (team.leader || leaderEmail) {
+      list.push({
+        id: team.leader?.id || ('usr_' + team.id),
+        name: leaderName,
+        firstName: team.leader?.firstName || '',
+        lastName: team.leader?.lastName || '',
+        email: leaderEmail,
+        phone: team.leader?.phone || '',
+        college: leaderCollege,
+        role: 'leader',
+        status: 'accepted',
+        isConfirmed: true,
+      })
+    }
+    for (const m of (team.members || [])) {
+      const mEmail = (m.email || '').toLowerCase().trim()
+      if (mEmail && mEmail === leaderEmail) continue
+      list.push({
+        ...m,
+        name: m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Teammate',
+        role: m.role || 'member',
+        status: m.status || 'accepted',
+        college: m.college || leaderCollege,
+        isConfirmed: m.isConfirmed || m.status === 'accepted' || m.status === 'confirmed',
+      })
+    }
+    return list
+  }, [team, leaderEmail, leaderName, leaderCollege])
+
+  const isLeader = leaderEmail ? leaderEmail === user.email?.toLowerCase() : Boolean(team.isLeaderForThisTeam)
   const isLocked = team.status === 'locked'
   const isDeadlinePassed = Date.now() > ROSTER_EDIT_DEADLINE
   const canModifyRoster = isLeader && !isLocked && !isDeadlinePassed
-  const acceptedMembers = (team.members || []).filter((m) => m.status === 'accepted')
-  const isFull = acceptedMembers.length >= team.size
+  const acceptedMembers = fullRoster.filter((m) => m.status === 'accepted' || m.role === 'leader' || m.isConfirmed)
+  const totalSquadCapacity = Math.max(team.size || 2, fullRoster.length)
+  const isFull = fullRoster.length >= 4
   const teamCode = team.code || 'SQUAD5'
 
   const handleCopy = async (label, text) => {
@@ -2123,7 +2155,11 @@ function TeamCard({ team, user, assignedTable, setTeams, onReload }) {
     setMemberActionMsg('')
     setMemberSubmitting(true)
     try {
-      const res = await updateMemberApi(team.id, editingMember.email, memberFormData)
+      const payload = {
+        ...memberFormData,
+        college: team.college || team.leader?.college || 'GIT',
+      }
+      const res = await updateMemberApi(team.id, editingMember.email, payload)
       if (res.team) {
         setTeams((prev) => prev.map((t) => (t.id === team.id ? { ...t, ...res.team } : t)))
       }
@@ -2141,7 +2177,11 @@ function TeamCard({ team, user, assignedTable, setTeams, onReload }) {
     setMemberActionMsg('')
     setMemberSubmitting(true)
     try {
-      const res = await addMemberApi(team.id, memberFormData)
+      const payload = {
+        ...memberFormData,
+        college: team.college || team.leader?.college || 'GIT',
+      }
+      const res = await addMemberApi(team.id, payload)
       if (res.team) {
         setTeams((prev) => prev.map((t) => (t.id === team.id ? { ...t, ...res.team } : t)))
       }
@@ -2217,7 +2257,7 @@ function TeamCard({ team, user, assignedTable, setTeams, onReload }) {
         {/* Squad Status & Capacity */}
         <div className="flex flex-wrap items-center gap-2.5">
           <span className="px-3 py-1.5 rounded-xl bg-[#131726] border border-slate-700 text-xs text-slate-300 font-mono">
-            Confirmed: <strong className="text-tactical">{acceptedMembers.length}/{team.size}</strong>
+            Confirmed: <strong className="text-tactical">{acceptedMembers.length}/{totalSquadCapacity}</strong>
           </span>
           {isLocked ? (
             <span className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 font-mono text-xs font-semibold flex items-center gap-1.5">
@@ -2235,12 +2275,12 @@ function TeamCard({ team, user, assignedTable, setTeams, onReload }) {
       {/* Live Roster Status Banner */}
       <div className="p-3.5 rounded-xl bg-[#0e1322] border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-mono">
         <div className="flex items-center gap-2 text-slate-300">
-          <span className="text-tactical font-bold text-sm">{acceptedMembers.length} of {team.size}</span>
+          <span className="text-tactical font-bold text-sm">{acceptedMembers.length} of {totalSquadCapacity}</span>
           <span>Operatives Confirmed & Joined Squad</span>
         </div>
-        {acceptedMembers.length < team.size ? (
+        {acceptedMembers.length < totalSquadCapacity ? (
           <span className="text-amber-400 text-[11px] font-medium flex items-center gap-1">
-            <span>⏳</span> Waiting for {team.size - acceptedMembers.length} teammate(s) to enter their personalized code
+            <span>⏳</span> Waiting for {totalSquadCapacity - acceptedMembers.length} teammate(s) to enter their personalized code
           </span>
         ) : (
           <span className="text-sync text-[11px] font-medium flex items-center gap-1">
@@ -2322,10 +2362,10 @@ function TeamCard({ team, user, assignedTable, setTeams, onReload }) {
       <div>
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3.5">
           <h3 className="font-mono text-xs text-slate-300 tracking-wider uppercase font-semibold">
-            Squad Operatives & Invite Codes ({team.members?.length || 0})
+            Squad Operatives & Invite Codes ({fullRoster.length})
           </h3>
           <div className="flex items-center gap-2">
-            {canModifyRoster && (team.members || []).length < 4 && (
+            {canModifyRoster && fullRoster.length < 4 && (
               <button
                 type="button"
                 onClick={() => {
@@ -2336,11 +2376,6 @@ function TeamCard({ team, user, assignedTable, setTeams, onReload }) {
                     lastName: '',
                     email: '',
                     phone: '',
-                    college: team.leader?.college || '',
-                    rollNumber: '',
-                    course: 'B.Tech CSE',
-                    year: '1st',
-                    gender: 'male',
                   })
                   setMemberActionMsg('')
                 }}
@@ -2368,10 +2403,10 @@ function TeamCard({ team, user, assignedTable, setTeams, onReload }) {
         </div>
 
         <div className="space-y-3">
-          {(team.members || []).map((member, idx) => {
+          {fullRoster.map((member, idx) => {
             const isSelf = member.email?.toLowerCase() === user.email?.toLowerCase()
             const isLead = member.role === 'leader'
-            const isAccepted = member.status === 'accepted'
+            const isAccepted = member.status === 'accepted' || isLead
             const memberCode = member.inviteCode || teamCode
 
             return (
@@ -2399,7 +2434,6 @@ function TeamCard({ team, user, assignedTable, setTeams, onReload }) {
                       <div className="text-xs text-slate-400 font-mono truncate mt-0.5">
                         {member.email} · {member.college || 'Participant'}
                         {member.phone ? ` · 📞 ${member.phone}` : ''}
-                        {member.rollNumber ? ` · ID: ${member.rollNumber}` : ''}
                       </div>
                     </div>
                   </div>
@@ -2449,11 +2483,6 @@ function TeamCard({ team, user, assignedTable, setTeams, onReload }) {
                                   lastName: member.lastName || member.name?.split(' ').slice(1).join(' ') || '',
                                   email: member.email || '',
                                   phone: member.phone || '',
-                                  college: member.college || '',
-                                  rollNumber: member.rollNumber || '',
-                                  course: member.course || 'B.Tech CSE',
-                                  year: member.year || '1st',
-                                  gender: member.gender || 'male',
                                 })
                                 setMemberActionMsg('')
                               }}
@@ -2593,63 +2622,9 @@ function TeamCard({ team, user, assignedTable, setTeams, onReload }) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] text-slate-400 uppercase font-mono mb-1">College Name *</label>
-                  <input
-                    type="text"
-                    value={memberFormData.college}
-                    onChange={(e) => setMemberFormData({ ...memberFormData, college: e.target.value })}
-                    className={inputClass}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] text-slate-400 uppercase font-mono mb-1">Roll No. / ID *</label>
-                  <input
-                    type="text"
-                    value={memberFormData.rollNumber}
-                    onChange={(e) => setMemberFormData({ ...memberFormData, rollNumber: e.target.value })}
-                    className={inputClass}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2.5">
-                <div>
-                  <label className="block text-[10px] text-slate-400 uppercase font-mono mb-1">Course *</label>
-                  <input
-                    type="text"
-                    value={memberFormData.course}
-                    onChange={(e) => setMemberFormData({ ...memberFormData, course: e.target.value })}
-                    className={inputClass}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] text-slate-400 uppercase font-mono mb-1">Year *</label>
-                  <select
-                    value={memberFormData.year}
-                    onChange={(e) => setMemberFormData({ ...memberFormData, year: e.target.value })}
-                    className={inputClass}
-                  >
-                    {['1st', '2nd', '3rd', '4th'].map((y) => (
-                      <option key={y} value={y}>{y}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] text-slate-400 uppercase font-mono mb-1">Sex *</label>
-                  <select
-                    value={memberFormData.gender}
-                    onChange={(e) => setMemberFormData({ ...memberFormData, gender: e.target.value })}
-                    className={inputClass}
-                  >
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                  </select>
-                </div>
+              <div className="p-2.5 rounded-lg bg-[#141829] border border-slate-700/60 text-xs font-mono flex items-center justify-between text-slate-300">
+                <span className="text-[10px] text-slate-400 uppercase">Squad College:</span>
+                <span className="text-white font-bold">{team.college || team.leader?.college || 'GIT'}</span>
               </div>
 
               {memberActionMsg && (
@@ -2750,66 +2725,9 @@ function TeamCard({ team, user, assignedTable, setTeams, onReload }) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] text-slate-400 uppercase font-mono mb-1">College Name *</label>
-                  <input
-                    type="text"
-                    placeholder={team.leader?.college || 'College Name'}
-                    value={memberFormData.college}
-                    onChange={(e) => setMemberFormData({ ...memberFormData, college: e.target.value })}
-                    className={inputClass}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] text-slate-400 uppercase font-mono mb-1">Roll No. / ID *</label>
-                  <input
-                    type="text"
-                    placeholder="23GIT1003"
-                    value={memberFormData.rollNumber}
-                    onChange={(e) => setMemberFormData({ ...memberFormData, rollNumber: e.target.value })}
-                    className={inputClass}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2.5">
-                <div>
-                  <label className="block text-[10px] text-slate-400 uppercase font-mono mb-1">Course *</label>
-                  <input
-                    type="text"
-                    placeholder="B.Tech CSE"
-                    value={memberFormData.course}
-                    onChange={(e) => setMemberFormData({ ...memberFormData, course: e.target.value })}
-                    className={inputClass}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] text-slate-400 uppercase font-mono mb-1">Year *</label>
-                  <select
-                    value={memberFormData.year}
-                    onChange={(e) => setMemberFormData({ ...memberFormData, year: e.target.value })}
-                    className={inputClass}
-                  >
-                    {['1st', '2nd', '3rd', '4th'].map((y) => (
-                      <option key={y} value={y}>{y}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] text-slate-400 uppercase font-mono mb-1">Sex *</label>
-                  <select
-                    value={memberFormData.gender}
-                    onChange={(e) => setMemberFormData({ ...memberFormData, gender: e.target.value })}
-                    className={inputClass}
-                  >
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                  </select>
-                </div>
+              <div className="p-2.5 rounded-lg bg-[#141829] border border-slate-700/60 text-xs font-mono flex items-center justify-between text-slate-300">
+                <span className="text-[10px] text-slate-400 uppercase">Squad College:</span>
+                <span className="text-white font-bold">{team.college || team.leader?.college || 'GIT'}</span>
               </div>
 
               {memberActionMsg && (
