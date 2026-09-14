@@ -2572,45 +2572,54 @@ async function handleFallback(path, options, err) {
     const candidates = []
 
     for (const t of allTeams) {
-      const leaderCollege = t.leader?.college || 'Global Institute of Technology, Jaipur'
+      const leaderCollege = t.college || t.leader?.college || 'Global Institute of Technology, Jaipur'
       const leaderName = t.leader?.name || (t.leader?.firstName ? `${t.leader.firstName} ${t.leader.lastName || ''}`.trim() : 'Leader')
-      const members = (Array.isArray(t.members) && t.members.length > 0) ? t.members : [
-        {
-          id: 'mem_leader_' + t.id,
-          name: leaderName,
-          email: t.leader?.email || t.leaderEmail || '',
-          college: t.leader?.college || leaderCollege,
-          role: 'leader',
-          status: 'accepted',
-          phone: t.leader?.phone || '',
-          rollNumber: t.leader?.rollNumber || '',
-          course: t.leader?.course || 'CSE',
-          year: t.leader?.year || '1st',
-          gender: t.leader?.gender || 'male',
-        }
-      ]
+      const leaderEmail = (t.leader?.email || t.leaderEmail || '').toLowerCase().trim()
+      const leaderObj = {
+        id: t.leader?.id || ('mem_leader_' + t.id),
+        name: leaderName,
+        firstName: t.leader?.firstName || '',
+        lastName: t.leader?.lastName || '',
+        email: t.leader?.email || t.leaderEmail || '',
+        college: leaderCollege,
+        role: 'leader',
+        status: 'accepted',
+        phone: t.leader?.phone || '',
+        rollNumber: t.leader?.rollNumber || '',
+        course: t.leader?.course || 'CSE',
+        year: t.leader?.year || '1st',
+        gender: t.leader?.gender || 'male',
+        isConfirmed: true,
+      }
+      const rawMembers = Array.isArray(t.members) ? t.members : []
+      const hasLeaderInMembers = rawMembers.some(
+        (x) => x.role === 'leader' || (leaderEmail && (x.email || '').toLowerCase().trim() === leaderEmail)
+      )
+      const members = hasLeaderInMembers ? rawMembers : [leaderObj, ...rawMembers]
+
       const confirmedCount =
         members.filter(
           (x) =>
             x.status === 'accepted' ||
             x.status === 'confirmed' ||
             x.role === 'leader' ||
-            (t.leader?.email && x.email?.toLowerCase() === t.leader?.email?.toLowerCase())
+            (leaderEmail && (x.email || '').toLowerCase().trim() === leaderEmail)
         ).length || t.acceptedCount || 1
       const totalCount = members.length || 4
 
       for (const m of members) {
         const isLeader =
           m.role === 'leader' ||
-          (t.leader?.email && m.email?.toLowerCase() === t.leader?.email?.toLowerCase())
+          (leaderEmail && (m.email || '').toLowerCase().trim() === leaderEmail)
         const isConfirmed = isLeader || m.status === 'accepted' || m.status === 'confirmed'
         const candidateStatus = isConfirmed ? 'accepted' : (m.status || 'pending')
 
         candidates.push({
+          candidateId: m.id || m.email,
           teamId: t.id,
           teamName: t.name,
           collegeName: m.college || leaderCollege,
-          candidateName: m.name || (isLeader ? t.leader?.name : 'Operative'),
+          candidateName: m.name || (isLeader ? leaderName : 'Operative'),
           role: isLeader ? 'leader' : 'member',
           email: m.email || '',
           phone: m.phone || (isLeader ? t.leader?.phone : '') || '',

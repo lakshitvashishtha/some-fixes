@@ -1767,15 +1767,39 @@ app.get('/api/ops/registrations', adminLimiter, requireAdmin, async (req, res) =
     const candidates = []
 
     for (const t of store.teams || []) {
-      const leaderCollege = t.leader?.college || 'GIT Jaipur'
-      for (const m of t.members || []) {
-        const isLeader = m.role === 'leader'
+      const leaderCollege = t.college || t.leader?.college || 'GIT Jaipur'
+      const leaderName = t.leader?.name || (t.leader?.firstName ? `${t.leader.firstName} ${t.leader.lastName || ''}`.trim() : 'Leader')
+      const leaderEmail = (t.leader?.email || t.leader_email || t.leaderEmail || '').toLowerCase().trim()
+
+      const leaderObj = {
+        id: t.leader?.id || ('mem_leader_' + t.id),
+        name: leaderName,
+        firstName: t.leader?.firstName || '',
+        lastName: t.leader?.lastName || '',
+        email: t.leader?.email || t.leaderEmail || '',
+        phone: t.leader?.phone || '',
+        college: leaderCollege,
+        rollNumber: t.leader?.rollNumber || '',
+        course: t.leader?.course || 'CSE',
+        year: t.leader?.year || '1st',
+        gender: t.leader?.gender || 'male',
+        role: 'leader',
+        status: 'accepted',
+        isConfirmed: true
+      }
+
+      const rawMembers = Array.isArray(t.members) ? t.members : []
+      const hasLeaderInMembers = rawMembers.some(m => m.role === 'leader' || (leaderEmail && (m.email || '').toLowerCase().trim() === leaderEmail))
+      const members = hasLeaderInMembers ? rawMembers : [leaderObj, ...rawMembers]
+
+      for (const m of members) {
+        const isLeader = m.role === 'leader' || (leaderEmail && (m.email || '').toLowerCase().trim() === leaderEmail)
         const isConfirmed = isLeader || m.status === 'accepted' || m.status === 'confirmed'
         const candidateStatus = isConfirmed ? 'accepted' : (m.status || 'pending')
 
         candidates.push({
           candidateId: m.id || m.email,
-          candidateName: m.name || (isLeader ? t.leader?.name : 'Operative'),
+          candidateName: m.name || (isLeader ? leaderName : 'Operative'),
           email: m.email,
           role: isLeader ? 'leader' : 'member',
           phone: m.phone || (isLeader ? t.leader?.phone : '') || '',

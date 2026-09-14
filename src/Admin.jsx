@@ -256,6 +256,11 @@ export default function Admin() {
       let effectiveCandidates = (regRes?.candidates && Array.isArray(regRes.candidates)) ? regRes.candidates : []
       if (effectiveCandidates.length === 0 && effectiveTeams.length > 0) {
         effectiveCandidates = buildCandidatesFromTeams(effectiveTeams)
+      } else if (effectiveTeams.length > 0) {
+        const derived = buildCandidatesFromTeams(effectiveTeams)
+        if (derived.length > effectiveCandidates.length) {
+          effectiveCandidates = derived
+        }
       }
       setCandidatesLedger(effectiveCandidates)
     } catch {}
@@ -292,6 +297,11 @@ export default function Admin() {
       let effectiveCandidates = (regRes?.candidates && Array.isArray(regRes.candidates)) ? regRes.candidates : []
       if (effectiveCandidates.length === 0 && effectiveTeams.length > 0) {
         effectiveCandidates = buildCandidatesFromTeams(effectiveTeams)
+      } else if (effectiveTeams.length > 0) {
+        const derived = buildCandidatesFromTeams(effectiveTeams)
+        if (derived.length > effectiveCandidates.length) {
+          effectiveCandidates = derived
+        }
       }
       setCandidatesLedger(effectiveCandidates)
 

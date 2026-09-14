@@ -565,20 +565,33 @@ function sharedStatePlugin() {
             const db = readDb();
             const candidates = [];
             for (const t of db.teams || []) {
-              const leaderCollege = t.leader?.college || 'Global Institute of Technology, Jaipur';
+              const leaderCollege = t.college || t.leader?.college || 'Global Institute of Technology, Jaipur';
               const leaderName = t.leader?.name || (t.leader?.firstName ? `${t.leader.firstName} ${t.leader.lastName || ''}`.trim() : 'Leader');
-              const members = Array.isArray(t.members) && t.members.length > 0 ? t.members : [
-                {
-                  id: 'mem_leader_' + t.id,
-                  name: leaderName,
-                  email: t.leader?.email,
-                  college: leaderCollege,
-                  role: 'leader',
-                  status: 'accepted'
-                }
-              ];
+              const leaderEmail = (t.leader?.email || t.leader_email || t.leaderEmail || '').toLowerCase().trim();
+
+              const leaderObj = {
+                id: t.leader?.id || ('mem_leader_' + t.id),
+                name: leaderName,
+                firstName: t.leader?.firstName || '',
+                lastName: t.leader?.lastName || '',
+                email: t.leader?.email || t.leaderEmail || '',
+                phone: t.leader?.phone || '',
+                college: leaderCollege,
+                rollNumber: t.leader?.rollNumber || '',
+                course: t.leader?.course || 'CSE',
+                year: t.leader?.year || '1st',
+                gender: t.leader?.gender || 'male',
+                role: 'leader',
+                status: 'accepted',
+                isConfirmed: true
+              };
+
+              const rawMembers = Array.isArray(t.members) ? t.members : [];
+              const hasLeaderInMembers = rawMembers.some(m => m.role === 'leader' || (leaderEmail && (m.email || '').toLowerCase().trim() === leaderEmail));
+              const members = hasLeaderInMembers ? rawMembers : [leaderObj, ...rawMembers];
+
               for (const m of members) {
-                const isLeader = m.role === 'leader' || (t.leader?.email && m.email?.toLowerCase() === t.leader?.email?.toLowerCase());
+                const isLeader = m.role === 'leader' || (leaderEmail && (m.email || '').toLowerCase().trim() === leaderEmail);
                 const isConfirmed = isLeader || m.status === 'accepted' || m.status === 'confirmed';
                 const candidateStatus = isConfirmed ? 'accepted' : (m.status || 'pending');
                 candidates.push({
