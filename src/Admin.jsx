@@ -28,8 +28,24 @@ import {
   updateProblemStatementsApi,
   DEFAULT_PROBLEM_STATEMENTS,
   getApiOrigin,
+  wipeAllLocalRegistrations,
 } from './api'
 import { QRCodeSvg } from './qrGenerator.jsx'
+
+function autoResize(el, minHeight = 72, maxHeight = 340) {
+  if (!el) return
+  el.style.resize = 'none'
+  el.style.boxSizing = 'border-box'
+  el.style.overflowWrap = 'anywhere'
+  el.style.wordBreak = 'break-word'
+  el.style.whiteSpace = 'pre-wrap'
+  el.style.height = 'auto'
+  const borderOffset = Math.max(el.offsetHeight - el.clientHeight, 2)
+  const targetHeight = el.scrollHeight + borderOffset
+  const clampedHeight = Math.min(Math.max(targetHeight, minHeight), maxHeight)
+  el.style.height = `${clampedHeight}px`
+  el.style.overflowY = targetHeight > maxHeight ? 'auto' : 'hidden'
+}
 
 function buildCandidatesFromTeams(teams = []) {
   const list = []
@@ -91,9 +107,9 @@ function buildCandidatesFromTeams(teams = []) {
 
 export default function Admin() {
   const [authorized, setAuthorized] = useState(false)
-  const [passkeyInput, setPasskeyInput] = useState(() => getStoredAdminKey() || 'cf5_master_access_2026')
+  const [passkeyInput, setPasskeyInput] = useState(() => getStoredAdminKey() || '')
   const [authError, setAuthError] = useState('')
-  const ADMIN_VAULT_KEY = passkeyInput.trim() || getStoredAdminKey() || 'cf5_master_access_2026'
+  const ADMIN_VAULT_KEY = passkeyInput.trim() || getStoredAdminKey() || ''
   const [activeTab, setActiveTab] = useState('registrations') // 'registrations' | 'problems' | 'tables' | 'broadcast' | 'mentors' | 'scores'
   const [hackState, setHackState] = useState(null)
   const [teams, setTeams] = useState(() => {
@@ -167,6 +183,10 @@ export default function Admin() {
   const [earlyExitCandidate, setEarlyExitCandidate] = useState(null)
   const [earlyExitOption, setEarlyExitOption] = useState('mark') // 'mark' | 'drop'
 
+  // Live Scores Tab Filter & Search
+  const [scoreRoundFilter, setScoreRoundFilter] = useState('all') // 'all' | 'round1' | 'round2'
+  const [scoreSearch, setScoreSearch] = useState('')
+
   // Problem Statements Editor & Live Simulator
   const [problemTracks, setProblemTracks] = useState([])
   const [editingTrack, setEditingTrack] = useState(null)
@@ -190,27 +210,24 @@ export default function Admin() {
 
       const localTeams = getAllRegisteredTeams()
       const teamsRes = await getAllRegisteredTeamsApi().catch(() => null)
-      const regRes = await getRegistrationsLedgerApi(ADMIN_VAULT_KEY).catch(() => null)
+      const regRes = ADMIN_VAULT_KEY ? await getRegistrationsLedgerApi(ADMIN_VAULT_KEY).catch(() => null) : null
 
-      const serverTeams = (teamsRes?.teams && teamsRes.teams.length > 0)
+      const serverTeams = (teamsRes?.teams && Array.isArray(teamsRes.teams))
         ? teamsRes.teams
-        : ((regRes?.teams && regRes.teams.length > 0) ? regRes.teams : (syncResult?.teams || []))
+        : ((regRes?.teams && Array.isArray(regRes.teams)) ? regRes.teams : (syncResult?.teams || []))
 
-      const effectiveTeams = serverTeams.length > 0 ? serverTeams : (localTeams.length > 0 ? localTeams : (teams || []))
-      if (effectiveTeams.length > 0) {
-        setTeams(effectiveTeams)
-      }
+      const backendResponded = !!(teamsRes?.success || regRes?.success || syncResult)
+      const effectiveTeams = backendResponded ? serverTeams : localTeams
+      setTeams(effectiveTeams)
 
       const gateRes = await getGateTeamsApi().catch(() => null)
       if (gateRes?.teams) setGateTeams(gateRes.teams)
 
-      let effectiveCandidates = (regRes?.candidates && regRes.candidates.length > 0) ? regRes.candidates : []
+      let effectiveCandidates = (regRes?.candidates && Array.isArray(regRes.candidates)) ? regRes.candidates : []
       if (effectiveCandidates.length === 0 && effectiveTeams.length > 0) {
         effectiveCandidates = buildCandidatesFromTeams(effectiveTeams)
       }
-      if (effectiveCandidates.length > 0) {
-        setCandidatesLedger(effectiveCandidates)
-      }
+      setCandidatesLedger(effectiveCandidates)
     } catch {}
   }
 
@@ -232,22 +249,21 @@ export default function Admin() {
 
       const localTeams = getAllRegisteredTeams()
       const teamsRes = await getAllRegisteredTeamsApi().catch(() => null)
-      const regRes = await getRegistrationsLedgerApi(ADMIN_VAULT_KEY).catch(() => null)
+      const regRes = ADMIN_VAULT_KEY ? await getRegistrationsLedgerApi(ADMIN_VAULT_KEY).catch(() => null) : null
 
-      const serverTeams = (teamsRes?.teams && teamsRes.teams.length > 0)
+      const serverTeams = (teamsRes?.teams && Array.isArray(teamsRes.teams))
         ? teamsRes.teams
-        : ((regRes?.teams && regRes.teams.length > 0) ? regRes.teams : (syncResult?.teams || []))
+        : ((regRes?.teams && Array.isArray(regRes.teams)) ? regRes.teams : (syncResult?.teams || []))
 
-      const effectiveTeams = serverTeams.length > 0 ? serverTeams : (localTeams.length > 0 ? localTeams : (teams || []))
-      if (effectiveTeams.length > 0) setTeams(effectiveTeams)
+      const backendResponded = !!(teamsRes?.success || regRes?.success || syncResult)
+      const effectiveTeams = backendResponded ? serverTeams : localTeams
+      setTeams(effectiveTeams)
 
-      let effectiveCandidates = (regRes?.candidates && regRes.candidates.length > 0) ? regRes.candidates : []
+      let effectiveCandidates = (regRes?.candidates && Array.isArray(regRes.candidates)) ? regRes.candidates : []
       if (effectiveCandidates.length === 0 && effectiveTeams.length > 0) {
         effectiveCandidates = buildCandidatesFromTeams(effectiveTeams)
       }
-      if (effectiveCandidates.length > 0) {
-        setCandidatesLedger(effectiveCandidates)
-      }
+      setCandidatesLedger(effectiveCandidates)
 
       const gateRes = await getGateTeamsApi().catch(() => null)
       if (gateRes?.teams) setGateTeams(gateRes.teams)
@@ -660,11 +676,13 @@ Track: ${mentor.track || 'All Tracks'}`
     )
 
     try {
-      const res = await verifyTeamPaymentApi(teamId, verified, notes, ADMIN_VAULT_KEY)
+      const candidate = teams.find((t) => t.id === teamId || t.code === teamId)
+      const res = await verifyTeamPaymentApi(teamId, verified, notes, ADMIN_VAULT_KEY, candidate)
       if (verified) {
-        setNotice(`✓ Payment verified! Official confirmation email dispatched to ${res?.emailDispatched?.to || 'Leader'} for team "${res?.team?.name || 'Squad'}" (UTR: ${res?.team?.payment?.utr}).`)
+        const dest = res?.emailDispatched?.to || candidate?.leader?.email || 'Leader'
+        setNotice(`✓ Payment verified! Official confirmation email dispatched to ${dest} for team "${res?.team?.name || candidate?.name || 'Squad'}".`)
       } else {
-        setNotice(`✕ Payment rejected for team "${res?.team?.name || 'Squad'}". Dashboard access locked.`)
+        setNotice(`✕ Payment rejected for team "${res?.team?.name || candidate?.name || 'Squad'}". Dashboard access locked.`)
       }
       reloadState()
       setTimeout(() => setNotice(''), 4500)
@@ -1093,7 +1111,7 @@ Track: ${mentor.track || 'All Tracks'}`
         )}
 
         {/* Tab Navigation */}
-        <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-3">
+        <div className="flex flex-wrap gap-2 border-b border-slate-800/80 pb-3">
           {[
             { id: 'registrations', label: '1. Master Registrations', icon: '📊' },
             { id: 'verified_attendees', label: '2. Confirmed Attendees & Early Exit', icon: '✅' },
@@ -1110,13 +1128,13 @@ Track: ${mentor.track || 'All Tracks'}`
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              className={`px-3 py-2 rounded text-xs font-arcade transition flex items-center gap-1.5 ${
+              className={`px-3.5 py-2 rounded-xl text-xs font-sans font-bold transition-all flex items-center gap-2 cursor-pointer ${
                 activeTab === tab.id
-                  ? 'bg-tactical text-black font-bold'
-                  : 'bg-[#0f121d] text-slate-400 hover:text-white border border-slate-800'
+                  ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-[0_2px_14px_rgba(245,158,11,0.4)] ring-1 ring-amber-300'
+                  : 'bg-[#0d101b] hover:bg-[#151a2e] text-slate-300 hover:text-white border border-slate-800/90'
               }`}
             >
-              <span>{tab.icon}</span>
+              <span className="text-sm">{tab.icon}</span>
               <span>{tab.label}</span>
             </button>
           ))}
@@ -1128,23 +1146,50 @@ Track: ${mentor.track || 'All Tracks'}`
             {/* Header & Export Actions */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
               <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xl">📊</span>
-                  <h2 className="font-arcade text-sm text-white uppercase tracking-wider">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-2xl">📊</span>
+                  <h2 className="font-sans font-extrabold text-base text-white uppercase tracking-wider">
                     MASTER REGISTRATION SPREADSHEET &amp; UTR PAYMENT VERIFICATION
                   </h2>
                 </div>
-                <p className="text-xs text-slate-400 font-mono mt-1">
+                <p className="text-xs text-slate-400 font-sans mt-1">
                   Live spreadsheet of all candidate registrations. Match incoming ₹800 UPI payments against bank statements, approve UTRs, and dispatch official confirmation emails.
                 </p>
               </div>
 
-              <div className="flex items-center gap-2.5">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!window.confirm('⚠️ WIPE ALL REGISTRATIONS & USERS?\n\nThis will purge all squads, candidate records, and user accounts from browser cache and the shared database.\n\nType OK to confirm.')) return
+                    wipeAllLocalRegistrations()
+                    setTeams([])
+                    setCandidatesLedger([])
+                    try {
+                      await fetch(`${getApiOrigin()}/api/shared-store`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'x-vault-passkey': ADMIN_VAULT_KEY,
+                          'x-ops-vault-key': ADMIN_VAULT_KEY,
+                        },
+                        body: JSON.stringify({ wipe: true, wipeTeams: true, wipeUsers: true, teams: [], users: [], passkey: ADMIN_VAULT_KEY }),
+                      })
+                    } catch {}
+                    setNotice('✅ All test registrations and candidate records purged. Database reset to 0.')
+                    setTimeout(() => setNotice(''), 4500)
+                  }}
+                  className="px-3.5 py-2.5 rounded-xl bg-red-950/60 hover:bg-red-900/70 border border-red-500/50 hover:border-red-400 text-red-200 font-sans font-bold text-xs uppercase transition flex items-center gap-1.5 cursor-pointer shadow-lg shadow-red-500/10"
+                  title="Purge all registration caches and reset ledger to 0"
+                >
+                  <span>🗑️</span>
+                  <span>PURGE ALL DATA</span>
+                </button>
                 <button
                   type="button"
                   disabled={isSyncing}
                   onClick={handleManualSync}
-                  className="px-3.5 py-2.5 rounded bg-[#131728] border border-cyan-500/40 hover:border-cyan-400 text-cyan-300 hover:text-white font-arcade text-[10px] uppercase transition flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-lg shadow-cyan-500/10"
+                  className="px-3.5 py-2.5 rounded-xl bg-[#0f172a] hover:bg-[#1e293b] border border-cyan-500/40 hover:border-cyan-400 text-cyan-300 hover:text-white font-sans font-bold text-xs uppercase transition flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-lg shadow-cyan-500/10"
                   title="Force re-sync and load newest registrations from live shared store"
                 >
                   <span className={isSyncing ? 'animate-spin' : ''}>🔄</span>
@@ -1153,7 +1198,7 @@ Track: ${mentor.track || 'All Tracks'}`
                 <button
                   type="button"
                   onClick={handleExportCSV}
-                  className="px-4 py-2.5 rounded bg-emerald-500 hover:bg-emerald-400 text-black font-arcade text-[10px] font-bold uppercase tracking-wider transition shadow-lg flex items-center gap-2"
+                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-sans text-xs font-extrabold uppercase tracking-wider transition shadow-[0_4px_15px_rgba(16,185,129,0.3)] flex items-center gap-2 cursor-pointer"
                 >
                   <span>📥</span>
                   <span>EXPORT SPREADSHEET (CSV / EXCEL)</span>
@@ -1163,16 +1208,16 @@ Track: ${mentor.track || 'All Tracks'}`
 
             {/* Stat Counters */}
             <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
-              <div className="p-3.5 rounded-lg bg-[#0e1220] border border-slate-800">
-                <span className="text-[10px] font-mono text-slate-400 uppercase block">Total Candidates</span>
-                <span className="font-arcade text-2xl text-white mt-1 block">
+              <div className="p-4 rounded-xl bg-[#0e1220] border border-slate-800/80 shadow-md">
+                <span className="text-[10px] font-sans font-bold text-slate-400 uppercase tracking-wider block">Total Candidates</span>
+                <span className="font-sans font-extrabold text-3xl text-white mt-1.5 block">
                   {candidatesLedger.length}
                 </span>
-                <span className="text-[9px] text-slate-500 font-mono">Enrolled across all teams</span>
+                <span className="text-[10px] text-slate-500 font-sans mt-1 block">Enrolled across all teams</span>
               </div>
-              <div className="p-3.5 rounded-lg bg-[#0e1220] border border-emerald-500/30 shadow-[0_0_12px_rgba(16,185,129,0.08)]">
-                <span className="text-[10px] font-mono text-emerald-400 uppercase block">Confirmed &amp; Joined</span>
-                <span className="font-arcade text-2xl text-emerald-400 mt-1 block">
+              <div className="p-4 rounded-xl bg-[#0e1220] border border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.1)]">
+                <span className="text-[10px] font-sans font-bold text-emerald-400 uppercase tracking-wider block">Confirmed &amp; Joined</span>
+                <span className="font-sans font-extrabold text-3xl text-emerald-400 mt-1.5 block">
                   {
                     candidatesLedger.filter(
                       (c) =>
@@ -1183,62 +1228,62 @@ Track: ${mentor.track || 'All Tracks'}`
                     ).length
                   }
                 </span>
-                <span className="text-[9px] text-emerald-500/70 font-mono">Accepted &amp; on-deck</span>
+                <span className="text-[10px] text-emerald-500/80 font-sans mt-1 block">Accepted &amp; on-deck</span>
               </div>
-              <div className="p-3.5 rounded-lg bg-[#0e1220] border border-slate-800">
-                <span className="text-[10px] font-mono text-slate-400 uppercase block">Total Squads</span>
-                <span className="font-arcade text-2xl text-cyan-400 mt-1 block">
+              <div className="p-4 rounded-xl bg-[#0e1220] border border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.1)]">
+                <span className="text-[10px] font-sans font-bold text-cyan-400 uppercase tracking-wider block">Total Squads</span>
+                <span className="font-sans font-extrabold text-3xl text-cyan-400 mt-1.5 block">
                   {Math.max(new Set(candidatesLedger.map((c) => c.teamId).filter(Boolean)).size, teams.length)}
                 </span>
-                <span className="text-[9px] text-slate-500 font-mono">Registered teams</span>
+                <span className="text-[10px] text-slate-500 font-sans mt-1 block">Registered teams</span>
               </div>
-              <div className="p-3.5 rounded-lg bg-[#0e1220] border border-emerald-500/30">
-                <span className="text-[10px] font-mono text-emerald-400 uppercase block">Verified &amp; Paid</span>
-                <span className="font-arcade text-2xl text-emerald-400 mt-1 block">
+              <div className="p-4 rounded-xl bg-[#0e1220] border border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.1)]">
+                <span className="text-[10px] font-sans font-bold text-emerald-400 uppercase tracking-wider block">Verified &amp; Paid</span>
+                <span className="font-sans font-extrabold text-3xl text-emerald-400 mt-1.5 block">
                   {new Set(candidatesLedger.filter((c) => {
                     const isRej = c.paymentStatus === 'rejected' || c.team?.payment?.status === 'rejected' || c.team?.status === 'rejected'
                     return !isRej && (c.paymentStatus === 'verified' || (c.paymentVerified && c.paymentStatus !== 'rejected') || c.team?.payment?.status === 'verified')
                   }).map((c) => c.teamId).filter(Boolean)).size}
                 </span>
-                <span className="text-[9px] text-emerald-500/70 font-mono">Passes issued &amp; emailed</span>
+                <span className="text-[10px] text-emerald-500/80 font-sans mt-1 block">Passes issued &amp; emailed</span>
               </div>
-              <div className="p-3.5 rounded-lg bg-[#14121a] border border-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.1)]">
-                <span className="text-[10px] font-mono text-amber-400 uppercase block">Pending Match</span>
-                <span className="font-arcade text-2xl text-amber-400 mt-1 block">
+              <div className="p-4 rounded-xl bg-[#14121a] border border-amber-500/50 shadow-[0_0_18px_rgba(245,158,11,0.15)]">
+                <span className="text-[10px] font-sans font-bold text-amber-400 uppercase tracking-wider block">Pending Match</span>
+                <span className="font-sans font-extrabold text-3xl text-amber-400 mt-1.5 block">
                   {new Set(candidatesLedger.filter((c) => {
                     const isRej = c.paymentStatus === 'rejected' || c.team?.payment?.status === 'rejected' || c.team?.status === 'rejected'
                     const isVer = !isRej && (c.paymentStatus === 'verified' || (c.paymentVerified && c.paymentStatus !== 'rejected') || c.team?.payment?.status === 'verified')
                     return !isVer && !isRej && (c.paymentStatus === 'submitted' || c.team?.payment?.status === 'submitted' || ((c.utr && c.utr !== 'NOT_SUBMITTED') || (c.paymentReference && c.paymentReference !== 'NOT_SUBMITTED' && c.paymentReference !== 'N/A') || (c.team?.payment?.utr && c.team?.payment?.utr !== 'NOT_SUBMITTED')))
                   }).map((c) => c.teamId).filter(Boolean)).size}
                 </span>
-                <span className="text-[9px] text-amber-500/70 font-mono">Awaiting UTR match</span>
+                <span className="text-[10px] text-amber-400/80 font-sans mt-1 block">Awaiting UTR match</span>
               </div>
-              <div className="p-3.5 rounded-lg bg-[#160e12] border border-red-500/40 shadow-[0_0_15px_rgba(239,68,68,0.1)]">
-                <span className="text-[10px] font-mono text-red-400 uppercase block">✕ Rejected</span>
-                <span className="font-arcade text-2xl text-red-400 mt-1 block">
+              <div className="p-4 rounded-xl bg-[#160e12] border border-red-500/50 shadow-[0_0_18px_rgba(239,68,68,0.15)]">
+                <span className="text-[10px] font-sans font-bold text-red-400 uppercase tracking-wider block">✕ Rejected</span>
+                <span className="font-sans font-extrabold text-3xl text-red-400 mt-1.5 block">
                   {new Set(candidatesLedger.filter((c) => {
                     return c.paymentStatus === 'rejected' || c.team?.payment?.status === 'rejected' || c.team?.status === 'rejected'
                   }).map((c) => c.teamId).filter(Boolean)).size}
                 </span>
-                <span className="text-[9px] text-red-400/70 font-mono">Invalid UTR / locked</span>
+                <span className="text-[10px] text-red-400/80 font-sans mt-1 block">Invalid UTR / locked</span>
               </div>
             </div>
 
             {/* Search & Filter Toolbar */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#0e1220] p-3 rounded-lg border border-slate-800">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#0c101d] p-4 rounded-xl border border-slate-800">
               <div className="relative flex-1">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-xs">🔍</span>
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
                 <input
                   type="text"
                   placeholder="Search Candidate, Team, Email, College, or 12-digit UTR..."
                   value={regSearch}
                   onChange={(e) => setRegSearch(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 text-xs bg-[#090b14] border border-slate-700 rounded text-white placeholder-slate-500 focus:outline-none focus:border-tactical font-mono"
+                  className="w-full pl-10 pr-4 py-2.5 text-sm bg-[#080b15] border border-slate-700/80 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 font-sans"
                 />
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[10px] uppercase font-arcade text-slate-400">Filter:</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs uppercase font-sans font-bold text-slate-400 mr-1">Filter:</span>
                 {[
                   { id: 'all', label: 'All' },
                   { id: 'confirmed', label: '✓ Confirmed & Joined' },
@@ -1252,10 +1297,10 @@ Track: ${mentor.track || 'All Tracks'}`
                     key={flt.id}
                     type="button"
                     onClick={() => setRegFilter(flt.id)}
-                    className={`px-2.5 py-1 rounded text-xs font-mono uppercase transition-all ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-sans font-bold uppercase transition-all cursor-pointer ${
                       regFilter === flt.id
-                        ? 'bg-tactical text-black font-bold shadow-[0_0_10px_rgba(255,184,0,0.3)]'
-                        : 'bg-[#151928] text-slate-400 hover:text-white border border-slate-700'
+                        ? 'bg-amber-400 text-slate-950 font-bold shadow-[0_0_12px_rgba(251,191,36,0.4)]'
+                        : 'bg-[#131828] text-slate-400 hover:text-white border border-slate-700/70 hover:border-slate-500'
                     }`}
                   >
                     {flt.label}
@@ -1265,20 +1310,20 @@ Track: ${mentor.track || 'All Tracks'}`
             </div>
 
             {/* Master Candidates Spreadsheet Table */}
-            <div className="overflow-x-auto rounded-lg border border-slate-800 bg-[#080b14]">
-              <table className="w-full text-left border-collapse text-xs font-mono">
+            <div className="overflow-x-auto rounded-xl border border-slate-800 bg-[#080b14] shadow-xl">
+              <table className="w-full text-left border-collapse text-xs font-sans">
                 <thead>
-                  <tr className="border-b border-slate-800 bg-[#0d1120] text-[10px] font-arcade text-slate-300 uppercase tracking-wider">
-                    <th className="py-3 px-4">#</th>
-                    <th className="py-3 px-4">Team Name</th>
-                    <th className="py-3 px-4">College Name</th>
-                    <th className="py-3 px-4">Candidate Name</th>
-                    <th className="py-3 px-4">Course / Year</th>
-                    <th className="py-3 px-4">Emails</th>
-                    <th className="py-3 px-4">Contact Number</th>
-                    <th className="py-3 px-4">Transaction ID (UTR)</th>
-                    <th className="py-3 px-4">Assigned Table</th>
-                    <th className="py-3 px-4">Payment Status &amp; Actions</th>
+                  <tr className="border-b border-slate-800 bg-[#0f1426] text-xs font-sans font-bold text-slate-200 uppercase tracking-wider">
+                    <th className="py-3.5 px-4">#</th>
+                    <th className="py-3.5 px-4">Team Name</th>
+                    <th className="py-3.5 px-4">College Name</th>
+                    <th className="py-3.5 px-4">Candidate Name</th>
+                    <th className="py-3.5 px-4">Course / Year</th>
+                    <th className="py-3.5 px-4">Emails</th>
+                    <th className="py-3.5 px-4">Contact Number</th>
+                    <th className="py-3.5 px-4">Transaction ID (UTR)</th>
+                    <th className="py-3.5 px-4">Assigned Table</th>
+                    <th className="py-3.5 px-4">Payment Status &amp; Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
@@ -2051,12 +2096,16 @@ Track: ${mentor.track || 'All Tracks'}`
                           </div>
 
                           <div>
-                            <label className="text-[9px] uppercase text-slate-400 block mb-1">Problem Statement Brief</label>
+                            <label className="text-[9px] uppercase text-slate-400 block mb-1 font-bold">Problem Statement Brief</label>
                             <textarea
-                              rows={3}
+                              ref={(el) => el && autoResize(el, 72, 280)}
+                              onInput={(e) => autoResize(e.target, 72, 280)}
                               value={editingTrack.brief || ''}
-                              onChange={(e) => setEditingTrack({ ...editingTrack, brief: e.target.value })}
-                              className="w-full px-2.5 py-1.5 rounded bg-[#090b14] border border-slate-700 text-xs text-slate-200 font-mono leading-relaxed"
+                              onChange={(e) => {
+                                setEditingTrack({ ...editingTrack, brief: e.target.value })
+                                autoResize(e.target, 72, 280)
+                              }}
+                              className="w-full px-2.5 py-1.5 rounded bg-[#090b14] border border-slate-700 text-xs text-slate-200 font-mono leading-relaxed resize-none focus:outline-none focus:border-amber-400 break-words min-w-0"
                             />
                           </div>
 
@@ -2065,7 +2114,8 @@ Track: ${mentor.track || 'All Tracks'}`
                               Problem Statements (one per line or comma separated)
                             </label>
                             <textarea
-                              rows={3}
+                              ref={(el) => el && autoResize(el, 72, 280)}
+                              onInput={(e) => autoResize(e.target, 72, 280)}
                               value={
                                 Array.isArray(editingTrack.problemStatements)
                                   ? editingTrack.problemStatements.join('\n')
@@ -2081,15 +2131,16 @@ Track: ${mentor.track || 'All Tracks'}`
                                   problemStatements: list,
                                   deliverables: list,
                                 })
+                                autoResize(e.target, 72, 280)
                               }}
-                              className="w-full px-2.5 py-1.5 rounded bg-[#090b14] border border-slate-700 text-xs text-white font-mono leading-relaxed"
+                              className="w-full px-2.5 py-1.5 rounded bg-[#090b14] border border-slate-700 text-xs text-white font-mono leading-relaxed resize-none focus:outline-none focus:border-amber-400 break-words min-w-0"
                               placeholder="e.g. AI-Based early warning and landslide Risk Monitoring System in NER"
                             />
                           </div>
                         </div>
                       ) : (
-                        <div className="flex flex-col justify-between h-full space-y-3 font-mono">
-                          <div>
+                        <div className="flex flex-col justify-between h-full space-y-3 font-mono min-w-0">
+                          <div className="min-w-0">
                             <div className="flex items-center justify-between mb-2">
                               <span className="text-2xl">{track.icon}</span>
                               <div className="flex items-center gap-1.5">
@@ -2109,23 +2160,23 @@ Track: ${mentor.track || 'All Tracks'}`
                                 </button>
                               </div>
                             </div>
-                            <h4 className="text-white font-bold text-sm font-sans">{track.title}</h4>
-                            <p className="text-[11px] text-tactical font-mono mt-0.5">{track.tagline}</p>
-                            <p className="text-xs text-slate-300 font-mono mt-2 leading-relaxed line-clamp-3">
+                            <h4 className="text-white font-bold text-sm font-sans break-words">{track.title}</h4>
+                            <p className="text-[11px] text-tactical font-mono mt-0.5 break-words">{track.tagline}</p>
+                            <p className="text-xs text-slate-300 font-mono mt-2 leading-relaxed break-words whitespace-pre-wrap">
                               {track.brief}
                             </p>
                           </div>
 
                           {((Array.isArray(track.problemStatements) && track.problemStatements.length > 0) || (Array.isArray(track.deliverables) && track.deliverables.length > 0)) && (
-                            <div className="pt-2 border-t border-slate-800/80">
+                            <div className="pt-2 border-t border-slate-800/80 min-w-0">
                               <span className="text-[9px] font-arcade uppercase text-tactical block mb-1">
                                 Problem Statements ({((track.problemStatements || track.deliverables || []).length)}):
                               </span>
-                              <ul className="text-[10px] text-slate-300 space-y-1 font-mono">
+                              <ul className="text-[10px] text-slate-300 space-y-1.5 font-mono">
                                 {(track.problemStatements || track.deliverables || []).map((ps, i) => (
-                                  <li key={i} className="flex items-start gap-1.5 leading-snug">
+                                  <li key={i} className="flex items-start gap-1.5 leading-snug break-words">
                                     <span className="text-tactical shrink-0">▸</span>
-                                    <span>{ps}</span>
+                                    <span className="break-words break-all sm:break-words min-w-0 flex-1">{ps}</span>
                                   </li>
                                 ))}
                               </ul>
@@ -2210,13 +2261,13 @@ Track: ${mentor.track || 'All Tracks'}`
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {problemTracks.map((track, i) => (
                       <div
                         key={track.id || i}
-                        className="p-5 rounded-2xl bg-[#0e1220] border border-slate-800 shadow-lg space-y-3 font-mono flex flex-col justify-between"
+                        className="p-5 rounded-2xl bg-[#0e1220] border border-slate-800 shadow-lg space-y-3 font-mono flex flex-col justify-between min-w-0 h-auto break-words"
                       >
-                        <div>
+                        <div className="min-w-0">
                           <div className="flex items-center justify-between mb-2">
                             <span className="text-3xl">{track.icon}</span>
                             {i === 0 && (
@@ -2225,21 +2276,24 @@ Track: ${mentor.track || 'All Tracks'}`
                               </span>
                             )}
                           </div>
-                          <h4 className="text-base font-bold font-sans text-white">{track.title}</h4>
-                          <p className="text-xs text-tactical font-mono mt-0.5">{track.tagline}</p>
-                          <p className="text-xs text-slate-300 font-mono mt-2 leading-relaxed">
+                          <h4 className="text-base font-bold font-sans text-white break-words">{track.title}</h4>
+                          <p className="text-xs text-tactical font-mono mt-0.5 break-words">{track.tagline}</p>
+                          <p className="text-xs text-slate-300 font-mono mt-2 leading-relaxed break-words whitespace-pre-wrap">
                             {track.brief}
                           </p>
                         </div>
 
                         {((Array.isArray(track.problemStatements) && track.problemStatements.length > 0) || (Array.isArray(track.deliverables) && track.deliverables.length > 0)) && (
-                          <div className="pt-3 border-t border-slate-800 space-y-1.5">
+                          <div className="pt-3 border-t border-slate-800 space-y-1.5 min-w-0">
                             <span className="text-[10px] font-arcade text-tactical uppercase font-bold flex items-center gap-1.5">
                               <span>🎯</span> PROBLEM STATEMENTS:
                             </span>
-                            <ul className="text-[11px] text-slate-200 space-y-1 font-mono list-disc list-inside">
+                            <ul className="text-[11px] text-slate-200 space-y-1.5 font-mono">
                               {(track.problemStatements || track.deliverables || []).map((ps, di) => (
-                                <li key={di} className="leading-snug">{ps}</li>
+                                <li key={di} className="flex items-start gap-1.5 leading-snug break-words">
+                                  <span className="text-tactical shrink-0">▸</span>
+                                  <span className="break-words break-all sm:break-words min-w-0 flex-1">{ps}</span>
+                                </li>
                               ))}
                             </ul>
                           </div>
@@ -2750,11 +2804,15 @@ Track: ${mentor.track || 'All Tracks'}`
                   Announcement Message
                 </label>
                 <textarea
-                  rows={3}
+                  ref={(el) => el && autoResize(el, 72, 260)}
+                  onInput={(e) => autoResize(e.target, 72, 260)}
                   value={broadcastText}
-                  onChange={(e) => setBroadcastText(e.target.value)}
+                  onChange={(e) => {
+                    setBroadcastText(e.target.value)
+                    autoResize(e.target, 72, 260)
+                  }}
                   placeholder="e.g. Mentor Round 1 begins in 15 minutes! Please be present at your assigned tables."
-                  className="w-full rounded bg-[#161a28] border border-slate-700 p-3 text-xs text-white outline-none focus:border-tactical font-mono"
+                  className="w-full rounded-xl bg-[#090d18] border border-slate-700/80 p-3.5 text-sm text-white outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 font-sans resize-none transition-all break-words min-w-0"
                   required
                 />
               </div>
@@ -3013,56 +3071,179 @@ Track: ${mentor.track || 'All Tracks'}`
         )}
 
         {/* TAB 5: Live Scores & Leaderboard */}
-        {activeTab === 'scores' && (
-          <div className="bg-[#0b0e18] border border-slate-800 rounded-xl p-6 space-y-5">
-            <div>
-              <h2 className="font-arcade text-sm text-white uppercase mb-1">
-                LIVE ON-GROUND LEADERBOARD & LOCKED SCORES
-              </h2>
-              <p className="text-xs text-slate-400 font-mono">
-                Real-time scores permanently locked by on-ground mentors across all tables.
-              </p>
-            </div>
+        {activeTab === 'scores' && (() => {
+          const r1List = evaluations.filter((e) => e.round === 'round1' || !e.round)
+          const r2List = evaluations.filter((e) => e.round === 'round2')
+          const maxScore = evaluations.length > 0 ? Math.max(...evaluations.map((e) => Number(e.total) || 0)) : 0
 
-            {evaluations.length === 0 ? (
-              <div className="p-8 text-center text-xs text-slate-500 font-mono rounded bg-[#0f121d] border border-slate-800">
-                No evaluations submitted yet. Mentors will grade teams at their tables during evaluation rounds.
+          const filteredEvals = evaluations.filter((ev) => {
+            const matchRound =
+              scoreRoundFilter === 'all' ||
+              (scoreRoundFilter === 'round1' && (ev.round === 'round1' || !ev.round)) ||
+              (scoreRoundFilter === 'round2' && ev.round === 'round2')
+
+            const q = scoreSearch.trim().toLowerCase()
+            const matchSearch =
+              !q ||
+              (ev.teamName && ev.teamName.toLowerCase().includes(q)) ||
+              (ev.tableNumber && String(ev.tableNumber).toLowerCase().includes(q)) ||
+              (ev.mentorName && ev.mentorName.toLowerCase().includes(q)) ||
+              (ev.mentorEmail && ev.mentorEmail.toLowerCase().includes(q)) ||
+              (ev.notes && ev.notes.toLowerCase().includes(q))
+
+            return matchRound && matchSearch
+          })
+
+          return (
+            <div className="bg-[#0b0e18] border border-slate-800 rounded-xl p-6 space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                <div>
+                  <h2 className="font-arcade text-sm text-white uppercase tracking-wider flex items-center gap-2">
+                    <span>🏆</span> LIVE ON-GROUND LEADERBOARD &amp; MENTOR EVALUATIONS
+                  </h2>
+                  <p className="text-xs text-slate-400 font-mono mt-0.5">
+                    Real-time locked assessment scores synchronized from on-ground mentor evaluations.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleManualSync}
+                  disabled={isSyncing}
+                  className="px-3.5 py-2 rounded bg-[#131728] border border-cyan-500/40 hover:border-cyan-400 text-cyan-300 font-arcade text-[10px] uppercase transition flex items-center gap-1.5 self-start sm:self-auto cursor-pointer shadow-lg"
+                >
+                  <span className={isSyncing ? 'animate-spin' : ''}>🔄</span>
+                  <span>{isSyncing ? 'SYNCING...' : 'LIVE REFRESH'}</span>
+                </button>
               </div>
-            ) : (
-              <div className="space-y-3">
-                {evaluations.map((ev, i) => (
-                  <div
-                    key={i}
-                    className="p-4 rounded-lg bg-[#111422] border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                  >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-arcade text-xs text-white">{ev.teamName || 'Squad'}</span>
-                        <span className="px-2 py-0.5 rounded bg-tactical text-black font-arcade text-[8px] font-bold">
-                          {ev.tableNumber}
-                        </span>
-                        <span className="text-[9px] font-mono text-sync">🔒 LOCKED</span>
-                      </div>
-                      <div className="text-[10px] text-slate-400 font-mono mt-1">
-                        Mentor: {ev.mentorName || ev.mentorEmail} · Innovation: {ev.scores.innovation}/30 · Tech: {ev.scores.tech}/30 · Feasibility: {ev.scores.feasibility}/20 · Pitch: {ev.scores.pitch}/20
-                      </div>
-                      {ev.notes && (
-                        <div className="text-[11px] text-slate-300 font-mono mt-1.5 italic">
-                          "{ev.notes}"
+
+              {/* KPI Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-3.5 rounded-lg bg-[#0e1220] border border-tactical/30">
+                  <span className="text-[10px] font-mono text-tactical uppercase block">Total Evaluations</span>
+                  <span className="font-arcade text-2xl text-white mt-1 block">{evaluations.length}</span>
+                  <span className="text-[9px] text-slate-500 font-mono">Both rounds combined</span>
+                </div>
+                <div className="p-3.5 rounded-lg bg-[#0e1220] border border-cyan-500/30">
+                  <span className="text-[10px] font-mono text-cyan-400 uppercase block">Round 1 Graded</span>
+                  <span className="font-arcade text-2xl text-cyan-300 mt-1 block">{r1List.length}</span>
+                  <span className="text-[9px] text-slate-500 font-mono">First assessment</span>
+                </div>
+                <div className="p-3.5 rounded-lg bg-[#0e1220] border border-purple-500/30">
+                  <span className="text-[10px] font-mono text-purple-400 uppercase block">Round 2 Graded</span>
+                  <span className="font-arcade text-2xl text-purple-300 mt-1 block">{r2List.length}</span>
+                  <span className="text-[9px] text-slate-500 font-mono">Second assessment</span>
+                </div>
+                <div className="p-3.5 rounded-lg bg-[#0e1220] border border-emerald-500/30">
+                  <span className="text-[10px] font-mono text-emerald-400 uppercase block">Top Score</span>
+                  <span className="font-arcade text-2xl text-emerald-400 mt-1 block">{maxScore}/100</span>
+                  <span className="text-[9px] text-slate-500 font-mono">Highest mark achieved</span>
+                </div>
+              </div>
+
+              {/* Toolbar */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#0e1220] p-3 rounded-lg border border-slate-800">
+                <div className="relative flex-1">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-xs">🔍</span>
+                  <input
+                    type="text"
+                    placeholder="Search Squad Name, Table, Mentor, or Comments..."
+                    value={scoreSearch}
+                    onChange={(e) => setScoreSearch(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 text-xs bg-[#090b14] border border-slate-700 rounded text-white placeholder-slate-500 focus:outline-none focus:border-tactical font-mono"
+                  />
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  {[
+                    { id: 'all', label: `All (${evaluations.length})` },
+                    { id: 'round1', label: `Round 1 (${r1List.length})` },
+                    { id: 'round2', label: `Round 2 (${r2List.length})` },
+                  ].map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setScoreRoundFilter(f.id)}
+                      className={`px-3 py-1.5 rounded text-[10px] font-arcade uppercase transition ${
+                        scoreRoundFilter === f.id
+                          ? 'bg-tactical text-black font-bold shadow'
+                          : 'bg-[#151928] text-slate-400 hover:text-white border border-slate-700'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Evaluations List */}
+              {filteredEvals.length === 0 ? (
+                <div className="p-8 text-center text-xs text-slate-500 font-mono rounded bg-[#0f121d] border border-slate-800">
+                  {evaluations.length === 0
+                    ? 'No evaluations submitted yet. Mentors grade teams at assigned tables during evaluation rounds.'
+                    : 'No evaluations match your search and filter criteria.'}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {filteredEvals.map((ev, i) => {
+                    const isR2 = ev.round === 'round2'
+                    return (
+                      <div
+                        key={ev.id || i}
+                        className="p-4 rounded-xl bg-[#111422] border border-slate-800 hover:border-tactical/50 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg"
+                      >
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-arcade text-xs text-white font-bold tracking-wide">
+                              {ev.teamName || 'Squad'}
+                            </span>
+                            <span className="px-2 py-0.5 rounded bg-[#1e253c] border border-slate-700 text-tactical font-mono text-[10px] font-bold">
+                              Table: {ev.tableNumber || 'Unassigned'}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold uppercase ${
+                              isR2
+                                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
+                                : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                            }`}>
+                              {isR2 ? 'Round 2 (Final)' : 'Round 1 (Pitch)'}
+                            </span>
+                            <span className="text-[9px] font-mono text-emerald-400 flex items-center gap-1">
+                              <span>🔒</span> LOCKED
+                            </span>
+                          </div>
+
+                          <div className="text-[11px] text-slate-300 font-mono flex flex-wrap gap-x-3 gap-y-1">
+                            <span><strong className="text-slate-400">Mentor:</strong> {ev.mentorName || ev.mentorEmail || 'Evaluator'}</span>
+                            <span className="text-slate-600">|</span>
+                            <span>Innovation: <strong className="text-white">{ev.scores?.innovation ?? ev.innovation ?? 0}</strong>/30</span>
+                            <span>Tech: <strong className="text-white">{ev.scores?.tech ?? ev.tech ?? 0}</strong>/30</span>
+                            <span>Feasibility: <strong className="text-white">{ev.scores?.feasibility ?? ev.feasibility ?? 0}</strong>/20</span>
+                            <span>Pitch: <strong className="text-white">{ev.scores?.pitch ?? ev.pitch ?? 0}</strong>/20</span>
+                          </div>
+
+                          {(ev.notes || ev.comments) && (
+                            <div className="text-xs text-slate-400 font-mono italic bg-[#0a0d17] p-2.5 rounded-lg border border-slate-800">
+                              💬 "{ev.notes || ev.comments}"
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
 
-                    <div className="text-right">
-                      <div className="font-arcade text-lg text-tactical">{ev.total}</div>
-                      <div className="text-[8px] font-mono text-slate-400">TOTAL / 100</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+                        <div className="sm:text-right shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-800">
+                          <div className="font-arcade text-2xl text-tactical font-bold">{ev.total || 0}</div>
+                          <div className="text-[9px] font-mono text-slate-400 uppercase tracking-wider">TOTAL / 100</div>
+                          {ev.timestamp && (
+                            <div className="text-[9px] text-slate-500 font-mono mt-1">
+                              {new Date(ev.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })()}
         {/* TAB 9: System Reset */}
         {activeTab === 'sysreset' && (
           <div className="bg-[#0b0e18] border border-red-900 rounded-xl p-6 space-y-6">
@@ -3091,17 +3272,19 @@ Track: ${mentor.track || 'All Tracks'}`
                   )
                   if (!confirmed) return
                   // Wipe localStorage keys
-                  const keysToWipe = ['cf_teams', 'cf_all_users', 'cf_auth_user', 'cf_logged_out']
-                  keysToWipe.forEach((k) => { try { localStorage.removeItem(k) } catch {} })
+                  wipeAllLocalRegistrations()
+                  setTeams([])
+                  setCandidatesLedger([])
                   // Push empty teams+users to shared store
                   try {
                     await fetch(`${getApiOrigin()}/api/shared-store`, {
                       method: 'POST',
                       headers: {
                         'Content-Type': 'application/json',
-                        'x-vault-passkey': ADMIN_VAULT_KEY
+                        'x-vault-passkey': ADMIN_VAULT_KEY,
+                        'x-ops-vault-key': ADMIN_VAULT_KEY,
                       },
-                      body: JSON.stringify({ wipe: true, teams: [], users: [], passkey: ADMIN_VAULT_KEY }),
+                      body: JSON.stringify({ wipe: true, wipeTeams: true, wipeUsers: true, teams: [], users: [], passkey: ADMIN_VAULT_KEY }),
                     })
                   } catch {}
                   setNotice('✅ All registration and user data wiped. Shared store cleared. Mentors, coordinators, and announcements preserved.')
@@ -3126,8 +3309,7 @@ Track: ${mentor.track || 'All Tracks'}`
                 onClick={async () => {
                   const confirmed = window.confirm('Refresh this browser from live shared database? Stale cache will be purged and fresh data loaded without logging you out.')
                   if (!confirmed) return
-                  const keysToWipe = ['cf_teams', 'cf_all_users', 'cf_sealed_ops_state']
-                  keysToWipe.forEach((k) => { try { localStorage.removeItem(k) } catch {} })
+                  wipeAllLocalRegistrations()
                   await handleManualSync()
                   setNotice('✅ Local cache refreshed from live database! You remain logged in.')
                 }}
@@ -3144,8 +3326,8 @@ Track: ${mentor.track || 'All Tracks'}`
       {/* MODAL 1: PAYMENT DOUBLE-CONFIRMATION (ASKED TWICE)                       */}
       {/* ========================================================================= */}
       {doubleConfirmTeam && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg bg-[#0b0e18] border-2 border-tactical rounded-2xl p-6 shadow-2xl shadow-tactical/20 space-y-5 animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
+          <div className="w-full max-w-lg bg-[#0b0e18] border-2 border-tactical rounded-2xl p-4 sm:p-6 shadow-2xl shadow-tactical/20 space-y-5 animate-in fade-in zoom-in-95 duration-200 max-h-[92vh] overflow-y-auto">
             <div className="flex items-start justify-between gap-3 border-b border-slate-800 pb-3">
               <div>
                 <span className="px-2 py-0.5 rounded bg-tactical/20 border border-tactical/50 text-tactical font-arcade text-[9px] font-bold">
@@ -3156,28 +3338,28 @@ Track: ${mentor.track || 'All Tracks'}`
               <button
                 type="button"
                 onClick={() => setDoubleConfirmTeam(null)}
-                className="text-slate-500 hover:text-white text-lg font-bold"
+                className="text-slate-500 hover:text-white text-lg font-bold p-1 rounded hover:bg-slate-800/60 transition"
               >
                 ✕
               </button>
             </div>
 
             <div className="p-4 rounded-xl bg-[#111422] border border-slate-800 space-y-2.5 font-mono text-xs">
-              <div className="flex justify-between">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1">
                 <span className="text-slate-500">Squad Name:</span>
-                <span className="text-white font-bold">{doubleConfirmTeam.teamName}</span>
+                <span className="text-white font-bold break-words">{doubleConfirmTeam.teamName}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1">
                 <span className="text-slate-500">Leader / Contact:</span>
-                <span className="text-slate-300">{doubleConfirmTeam.candidateName} ({doubleConfirmTeam.email})</span>
+                <span className="text-slate-300 break-words break-all">{doubleConfirmTeam.candidateName} ({doubleConfirmTeam.email})</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Required Amount:</span>
                 <span className="text-emerald-400 font-bold">₹800 INR</span>
               </div>
-              <div className="flex justify-between items-center pt-2 border-t border-slate-800/80">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 pt-2 border-t border-slate-800/80">
                 <span className="text-slate-500">Claimed 12-Digit UTR:</span>
-                <span className="px-2.5 py-1 rounded bg-black border border-slate-700 text-tactical font-bold font-mono tracking-widest text-sm">
+                <span className="px-2.5 py-1 rounded bg-black border border-slate-700 text-tactical font-bold font-mono tracking-widest text-sm break-all">
                   {doubleConfirmTeam.paymentReference || doubleConfirmTeam.utr || 'NOT GIVEN'}
                 </span>
               </div>
@@ -3229,8 +3411,8 @@ Track: ${mentor.track || 'All Tracks'}`
       {/* MODAL 2: REVERT PAYMENT STATUS (UNDO MISTAKE)                             */}
       {/* ========================================================================= */}
       {revertConfirmTeam && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-[#0b0e18] border-2 border-red-500 rounded-2xl p-6 shadow-2xl shadow-red-500/20 space-y-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
+          <div className="w-full max-w-md bg-[#0b0e18] border-2 border-red-500 rounded-2xl p-4 sm:p-6 shadow-2xl shadow-red-500/20 space-y-5 max-h-[92vh] overflow-y-auto">
             <div className="flex items-start justify-between gap-3 border-b border-slate-800 pb-3">
               <div>
                 <span className="px-2 py-0.5 rounded bg-red-500/20 border border-red-500/50 text-red-400 font-arcade text-[9px] font-bold">
@@ -3241,14 +3423,14 @@ Track: ${mentor.track || 'All Tracks'}`
               <button
                 type="button"
                 onClick={() => setRevertConfirmTeam(null)}
-                className="text-slate-500 hover:text-white text-lg font-bold"
+                className="text-slate-500 hover:text-white text-lg font-bold p-1 rounded hover:bg-slate-800/60 transition"
               >
                 ✕
               </button>
             </div>
 
             <div className="p-4 rounded-xl bg-red-950/20 border border-red-900/50 text-xs font-mono space-y-2">
-              <p className="text-slate-300">
+              <p className="text-slate-300 break-words">
                 Are you sure you want to revert squad <strong className="text-white">"{revertConfirmTeam.teamName}"</strong> back to <span className="text-amber-400 font-bold">Pending Bank Match</span>?
               </p>
               <p className="text-slate-400 text-[11px]">
@@ -3280,8 +3462,8 @@ Track: ${mentor.track || 'All Tracks'}`
       {/* MODAL 2.5: REJECT PAYMENT CONFIRMATION                                    */}
       {/* ========================================================================= */}
       {rejectConfirmTeam && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-[#0b0e18] border-2 border-red-500 rounded-2xl p-6 shadow-2xl shadow-red-500/20 space-y-5 animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
+          <div className="w-full max-w-md bg-[#0b0e18] border-2 border-red-500 rounded-2xl p-4 sm:p-6 shadow-2xl shadow-red-500/20 space-y-5 animate-in fade-in zoom-in-95 duration-200 max-h-[92vh] overflow-y-auto">
             <div className="flex items-start justify-between gap-3 border-b border-slate-800 pb-3">
               <div>
                 <span className="px-2 py-0.5 rounded bg-red-500/20 border border-red-500/50 text-red-400 font-arcade text-[9px] font-bold">
@@ -3292,24 +3474,24 @@ Track: ${mentor.track || 'All Tracks'}`
               <button
                 type="button"
                 onClick={() => setRejectConfirmTeam(null)}
-                className="text-slate-500 hover:text-white text-lg font-bold"
+                className="text-slate-500 hover:text-white text-lg font-bold p-1 rounded hover:bg-slate-800/60 transition"
               >
                 ✕
               </button>
             </div>
 
             <div className="p-4 rounded-xl bg-[#111422] border border-slate-800 space-y-2 font-mono text-xs">
-              <div className="flex justify-between">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1">
                 <span className="text-slate-500">Squad Name:</span>
-                <span className="text-white font-bold">{rejectConfirmTeam.teamName}</span>
+                <span className="text-white font-bold break-words">{rejectConfirmTeam.teamName}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1">
                 <span className="text-slate-500">Leader:</span>
-                <span className="text-slate-300">{rejectConfirmTeam.candidateName} ({rejectConfirmTeam.email})</span>
+                <span className="text-slate-300 break-words break-all">{rejectConfirmTeam.candidateName} ({rejectConfirmTeam.email})</span>
               </div>
-              <div className="flex justify-between items-center pt-2 border-t border-slate-800/80">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 pt-2 border-t border-slate-800/80">
                 <span className="text-slate-500">Submitted UTR:</span>
-                <span className="px-2 py-0.5 rounded bg-black border border-red-900/60 text-red-400 font-mono font-bold text-xs">
+                <span className="px-2 py-0.5 rounded bg-black border border-red-900/60 text-red-400 font-mono font-bold text-xs break-all">
                   {rejectConfirmTeam.paymentReference || rejectConfirmTeam.utr || 'NOT GIVEN'}
                 </span>
               </div>
@@ -3668,9 +3850,10 @@ Track: ${mentor.track || 'All Tracks'}`
       {/* MODAL 6: ADD / EDIT PROBLEM TRACK                                         */}
       {/* ========================================================================= */}
       {trackModalData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="w-full max-w-lg bg-[#0b0e18] border-2 border-tactical rounded-2xl p-6 shadow-2xl space-y-5 my-8 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-start justify-between gap-3 border-b border-slate-800 pb-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
+          <div className="w-full max-w-xl max-h-[92vh] flex flex-col bg-[#0b0e18] border-2 border-tactical rounded-2xl shadow-2xl shadow-tactical/25 my-auto animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
+            {/* Pinned Modal Header */}
+            <div className="flex items-start justify-between gap-3 border-b border-slate-800 p-4 sm:p-5 shrink-0 bg-[#0c101d]">
               <div>
                 <span className="px-2 py-0.5 rounded bg-tactical/20 border border-tactical/50 text-tactical font-arcade text-[9px] font-bold">
                   {trackModalData.isNew ? 'TRACK CREATOR' : 'TRACK EDITOR'}
@@ -3685,86 +3868,117 @@ Track: ${mentor.track || 'All Tracks'}`
                   setTrackModalData(null)
                   setIsTracksDirty(false)
                 }}
-                className="text-slate-500 hover:text-white text-lg font-bold"
+                className="text-slate-500 hover:text-white text-lg font-bold p-1 rounded hover:bg-slate-800/60 transition"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleSaveTrackModal} className="space-y-4 font-mono text-xs">
-              <div className="grid grid-cols-4 gap-3">
-                <div className="col-span-1">
-                  <label className="text-[10px] uppercase text-slate-400 block mb-1 font-bold">Icon</label>
-                  <input
-                    type="text"
-                    required
-                    value={trackModalData.icon}
-                    onChange={(e) => setTrackModalData({ ...trackModalData, icon: e.target.value })}
-                    className="w-full text-center py-2 rounded-lg bg-[#161a28] border border-slate-700 text-lg text-white font-mono"
-                    placeholder="💡"
-                  />
-                  <div className="flex justify-center gap-1 mt-1.5 text-sm cursor-pointer select-none">
-                    {['🤖', '🌐', '💡', '🛡️', '💳', '🏥', '🚀'].map((em) => (
-                      <span
-                        key={em}
-                        onClick={() => setTrackModalData({ ...trackModalData, icon: em })}
-                        className="hover:scale-125 transition-transform"
-                      >
-                        {em}
-                      </span>
-                    ))}
-                  </div>
-                </div>
+            {/* Scrollable Form Body */}
+            <form id="track-modal-form" onSubmit={handleSaveTrackModal} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 font-sans text-xs">
+              {/* Track Title */}
+              <div>
+                <label className="text-xs uppercase text-slate-300 block mb-1.5 font-bold">
+                  Track Title <span className="text-amber-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={trackModalData.title}
+                  onChange={(e) => setTrackModalData({ ...trackModalData, title: e.target.value })}
+                  className="w-full px-4 py-2.5 rounded-xl bg-[#090d18] border border-slate-700/80 text-sm text-white font-sans font-bold placeholder:text-slate-500 focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 break-words"
+                  placeholder="e.g. Autonomous Drones & Swarm Robotics"
+                />
+              </div>
 
-                <div className="col-span-3">
-                  <label className="text-[10px] uppercase text-slate-400 block mb-1 font-bold">
-                    Track Title <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={trackModalData.title}
-                    onChange={(e) => setTrackModalData({ ...trackModalData, title: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg bg-[#161a28] border border-slate-700 text-sm text-white font-sans font-bold"
-                    placeholder="e.g. Autonomous Drones & Swarm Robotics"
-                  />
+              {/* Non-overflowing Track Icon & Quick Emoji Selector */}
+              <div>
+                <label className="text-xs uppercase text-slate-300 block mb-1.5 font-bold">
+                  Track Icon &amp; Symbol
+                </label>
+                <div className="flex flex-wrap items-center gap-2.5 p-3 rounded-xl bg-[#090d18] border border-slate-700/80">
+                  <div className="w-12 h-12 rounded-xl bg-[#131828] border border-amber-400/50 flex items-center justify-center text-2xl shadow-inner shrink-0 select-none">
+                    {trackModalData.icon || '💡'}
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] uppercase font-bold text-slate-400">Custom Symbol</span>
+                    <input
+                      type="text"
+                      required
+                      value={trackModalData.icon}
+                      onChange={(e) => setTrackModalData({ ...trackModalData, icon: e.target.value })}
+                      className="w-20 text-center py-1 px-2 rounded-lg bg-[#131828] border border-slate-700 text-sm text-white font-sans outline-none focus:border-amber-400"
+                      placeholder="💡"
+                    />
+                  </div>
+                  <div className="h-8 w-[1px] bg-slate-800 hidden sm:block mx-1" />
+                  <div className="flex-1 min-w-[180px]">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Quick Select</span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {['💡', '🤖', '🌐', '🛡️', '💳', '🏥', '🚀', '⚡', '🎮', '🛰️', '🧠', '🔬'].map((em) => (
+                        <button
+                          key={em}
+                          type="button"
+                          onClick={() => setTrackModalData({ ...trackModalData, icon: em })}
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center text-base transition-all cursor-pointer ${
+                            trackModalData.icon === em
+                              ? 'bg-amber-400 text-black scale-110 shadow-[0_0_10px_rgba(251,191,36,0.5)] font-bold'
+                              : 'bg-[#131828] hover:bg-[#1e253e] text-slate-200 border border-slate-800'
+                          }`}
+                          title={`Select ${em}`}
+                        >
+                          {em}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
 
+              {/* Tagline */}
               <div>
-                <label className="text-[10px] uppercase text-slate-400 block mb-1 font-bold">Tagline</label>
+                <label className="text-xs uppercase text-slate-300 block mb-1.5 font-bold">Tagline</label>
                 <input
                   type="text"
                   value={trackModalData.tagline}
                   onChange={(e) => setTrackModalData({ ...trackModalData, tagline: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg bg-[#161a28] border border-slate-700 text-xs text-tactical"
+                  className="w-full px-4 py-2.5 rounded-xl bg-[#090d18] border border-slate-700/80 text-xs text-amber-400 placeholder:text-slate-500 focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 font-sans break-words"
                   placeholder="e.g. UAV pathfinding, collision avoidance & telemetry intelligence"
                 />
               </div>
 
+              {/* Dynamic Auto-Expanding Problem Statement Brief */}
               <div>
-                <label className="text-[10px] uppercase text-slate-400 block mb-1 font-bold">
-                  Problem Statement Brief <span className="text-red-400">*</span>
+                <label className="text-xs uppercase text-slate-300 block mb-1.5 font-bold">
+                  Problem Statement Brief <span className="text-amber-400">*</span>
                 </label>
                 <textarea
-                  rows={4}
                   required
+                  spellCheck="false"
+                  ref={(el) => el && autoResize(el, 80, 420)}
+                  onInput={(e) => autoResize(e.target, 80, 420)}
                   value={trackModalData.brief}
-                  onChange={(e) => setTrackModalData({ ...trackModalData, brief: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg bg-[#161a28] border border-slate-700 text-xs text-slate-200 leading-relaxed"
+                  onChange={(e) => {
+                    setTrackModalData({ ...trackModalData, brief: e.target.value })
+                    autoResize(e.target, 80, 420)
+                  }}
+                  className="w-full px-4 py-3 rounded-xl bg-[#090d18] border border-slate-700/80 text-xs sm:text-sm text-slate-200 leading-relaxed resize-none focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 font-sans transition-all break-words min-w-0"
                   placeholder="Describe the real-world challenge, technical scope, and expected impact for participant squads..."
                 />
               </div>
 
+              {/* Dynamic Auto-Expanding Problem Statements (Challenges) */}
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-[10px] uppercase text-tactical block font-bold">
-                    Problem Statements (one per line or comma separated)
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-1.5">
+                  <label className="text-xs uppercase text-amber-400 font-bold">
+                    Problem Statements (one per line or comma-separated)
                   </label>
-                  <span className="text-[9px] font-mono text-slate-400">Listed as challenges on Dashboard</span>
+                  <span className="text-[10px] text-slate-400 shrink-0">Dynamic box · Shows on Dashboard</span>
                 </div>
                 <textarea
-                  rows={4}
+                  spellCheck="false"
+                  ref={(el) => el && autoResize(el, 80, 420)}
+                  onInput={(e) => autoResize(e.target, 80, 420)}
                   value={
                     trackModalData.problemStatementsText !== undefined
                       ? trackModalData.problemStatementsText
@@ -3774,31 +3988,36 @@ Track: ${mentor.track || 'All Tracks'}`
                               ? trackModalData.deliverables.join('\n')
                               : (trackModalData.deliverables || '')))
                   }
-                  onChange={(e) => setTrackModalData({ ...trackModalData, problemStatementsText: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg bg-[#161a28] border border-slate-700 text-xs text-white font-mono leading-relaxed"
+                  onChange={(e) => {
+                    setTrackModalData({ ...trackModalData, problemStatementsText: e.target.value })
+                    autoResize(e.target, 80, 420)
+                  }}
+                  className="w-full px-4 py-3 rounded-xl bg-[#090d18] border border-slate-700/80 text-xs sm:text-sm text-white font-mono leading-relaxed resize-none focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 transition-all break-words min-w-0"
                   placeholder="e.g.&#10;AI-Based early warning and landslide Risk Monitoring System in NER&#10;AI-Based Smart Logistics and Accessibility Intelligence Platform for North Eastern Region (NER)&#10;Solar-Powered Smart Mini Cold Storage System for Fresh Vegetables in NER"
                 />
               </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTrackModalData(null)
-                    setIsTracksDirty(false)
-                  }}
-                  className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-arcade text-[10px]"
-                >
-                  CANCEL
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 rounded-lg bg-tactical hover:bg-[#e6a600] text-black font-arcade text-[10px] font-bold shadow-lg shadow-tactical/20 transition"
-                >
-                  {trackModalData.isNew ? '🚀 PUBLISH TRACK TO VAULT >>' : '💾 SAVE TRACK CHANGES >>'}
-                </button>
-              </div>
             </form>
+
+            {/* Pinned Modal Footer Actions */}
+            <div className="flex items-center justify-end gap-3 p-3.5 sm:p-4 border-t border-slate-800 bg-[#080b13] shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setTrackModalData(null)
+                  setIsTracksDirty(false)
+                }}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-sans text-xs font-bold transition cursor-pointer"
+              >
+                CANCEL
+              </button>
+              <button
+                type="submit"
+                form="track-modal-form"
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-sans text-xs font-extrabold uppercase tracking-wider shadow-lg shadow-amber-500/25 transition active:scale-[0.99] cursor-pointer"
+              >
+                {trackModalData.isNew ? '🚀 PUBLISH TRACK TO VAULT >>' : '💾 SAVE TRACK CHANGES >>'}
+              </button>
+            </div>
           </div>
         </div>
       )}

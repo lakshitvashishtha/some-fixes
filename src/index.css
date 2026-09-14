@@ -13,22 +13,22 @@
   --color-surface: #10121a;
   --color-surface-bright: #171924;
   --color-border-subtle: #1e2233;
-  --color-border-active: #ffb800;
-  --color-tactical: #ffb800;
-  --color-tactical-hover: #e5a600;
-  --color-tactical-dark: #b28000;
+  --color-border-active: #f59e0b;
+  --color-tactical: #f59e0b;
+  --color-tactical-hover: #fbbf24;
+  --color-tactical-dark: #d97706;
   --color-arcadeTeal: #00e5ff;
   --color-muted: #7a829e;
   --color-text: #f1f5f9;
   --font-pixel: "Silkscreen", monospace;
   --font-vt: "VT323", monospace;
-  --font-sans: "Space Grotesk", sans-serif;
+  --font-sans: "Plus Jakarta Sans", "Space Grotesk", system-ui, -apple-system, sans-serif;
   --font-mono: "Space Mono", monospace;
   --font-press-start: "Press Start 2P", monospace;
   --font-space-mono: "Space Mono", monospace;
-  --font-arcade: "Press Start 2P", monospace;
+  --font-arcade: "Space Grotesk", "Plus Jakarta Sans", system-ui, sans-serif;
   --font-mono-tech: "Space Mono", monospace;
-  --font-sans-tech: "Space Grotesk", sans-serif;
+  --font-sans-tech: "Plus Jakarta Sans", "Space Grotesk", sans-serif;
   --color-sync: #1dd3b0;
 }
 
@@ -188,6 +188,19 @@ html.lenis body {
 .retro-nav-pill:active {
   transform: translateY(3px);
   box-shadow: 0 1px 0 #0d2824;
+}
+
+.navbar-crt-box {
+  background-color: rgba(6, 24, 27, 0.88);
+  background-image: repeating-linear-gradient(
+    0deg,
+    rgba(20, 60, 55, 0.18),
+    rgba(20, 60, 55, 0.18) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  border: 1px solid rgba(20, 75, 68, 0.6);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.7), 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
 @keyframes floatParticle {
@@ -602,6 +615,90 @@ html.lenis body {
   cursor: default;
 }
 
+/* ── Universal Dynamic Safe Wrapping & Auto-Expanding Boxes Everywhere ────
+ * Disables ugly manual resize grabber / stretch handle everywhere.
+ * Enables modern dynamic auto-expanding box sizing with zero layout explosion.
+ */
+*, *::before, *::after {
+  overflow-wrap: break-word;
+}
+
+input, textarea, select {
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+pre, code, kbd, samp {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+textarea {
+  resize: none !important;
+  field-sizing: content;
+  min-height: 72px;
+  max-height: 380px;
+  overflow-y: auto;
+  line-height: 1.5;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Custom Tactical & Cyber Scrollbars for Textareas and Dynamic Boxes */
+textarea::-webkit-scrollbar,
+.dynamic-box::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+textarea::-webkit-scrollbar-track,
+.dynamic-box::-webkit-scrollbar-track {
+  background: #090c16;
+  border-radius: 4px;
+}
+textarea::-webkit-scrollbar-thumb,
+.dynamic-box::-webkit-scrollbar-thumb {
+  background: #252e48;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 184, 0, 0.15);
+}
+textarea::-webkit-scrollbar-thumb:hover,
+.dynamic-box::-webkit-scrollbar-thumb:hover {
+  background: #f59e0b;
+}
+
+/* Dynamic Box & Card utilities */
+.dynamic-card,
+.dynamic-box {
+  min-height: auto;
+  height: auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Mobile responsive safeguards */
+@media (max-width: 640px) {
+  /* Prevent iOS Safari 16px auto-zoom */
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+
+  /* Prevent dialogs & modals from overflowing small viewports */
+  .modal-dialog,
+  [role="dialog"] {
+    width: calc(100vw - 24px) !important;
+    max-width: 100% !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+  }
+}
+
 /* ── Operative dashboard / profile page ─────────────────────────────────── */
 
 /* Subtle tactical matrix grid (amber, larger 36px cells) */
@@ -612,15 +709,28 @@ html.lenis body {
   background-size: 36px 36px;
 }
 
-/* Ribbed tactile texture for arcade push buttons */
+/* Modern tactile button sheen */
 .btn-ribbed {
-  background-image: repeating-linear-gradient(
-    0deg,
-    rgba(0, 0, 0, 0.14),
-    rgba(0, 0, 0, 0.14) 2px,
-    transparent 2px,
-    transparent 4px
+  background-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.2) 0%,
+    rgba(255, 255, 255, 0.04) 50%,
+    rgba(0, 0, 0, 0.1) 100%
   );
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+@keyframes floatSlow {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-8px) rotate(1deg);
+  }
+}
+
+.animate-float-slow {
+  animation: floatSlow 6s ease-in-out infinite;
 }
 
 /* Slim custom scrollbar inside the operative console */

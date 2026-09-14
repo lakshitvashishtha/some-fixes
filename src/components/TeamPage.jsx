@@ -1,157 +1,141 @@
-/**
- * TeamPage.jsx  (v4 — Arcade Player-Card Roster)
- *
- * Style goals:
- *   • Matches the site's core arcade vocabulary: hard 2px borders, chunky
- *     offset push-button shadows, HUD corner brackets, blueprint grid fill
- *   • Silkscreen / pixel type throughout — no generic glassmorphism
- *   • Ribbed press-down social buttons (same feel as auth page buttons)
- *   • Straight cards, hover lift — no lanyard, no 3D mouse tilt
- */
-
-import { useState } from 'react'
+import { useRef, useState, useCallback, useEffect } from 'react'
 import { motion } from 'framer-motion'
 
-function makeAvatar(initials, bg = '#111827', accent = '#38bdf8') {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
-    <rect width="200" height="200" fill="${bg}"/>
-    <circle cx="100" cy="76" r="34" fill="${accent}" opacity="0.85"/>
-    <path d="M42,185 C42,135 68,125 100,125 C132,125 158,135 158,185 Z" fill="${accent}" opacity="0.85"/>
-    <rect x="0" y="150" width="200" height="50" fill="${bg}" opacity="0.92"/>
-    <text x="100" y="182" font-family="'Courier New', monospace" font-size="20" font-weight="bold" fill="#ffffff" text-anchor="middle" letter-spacing="3">${initials}</text>
-  </svg>`
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
-}
+const FS_TITLE_LG = '1.1rem'
+const FS_TITLE_SM = '1rem'
+const ICON_SIZE = 15
+const BTN_SIZE = 30
 
 const CONVENERS = [
   {
     name: 'Dr. Pradeep Jha',
-    role: 'Convener (HOD)',
+    role: 'Lead Visionary',
     photo: 'https://ik.imagekit.io/rcfcr7y0e/Screenshot%202025-09-04%20121036.png?updatedAt=1756976567715',
     accentColor: '#f5c344',
+    tilt: -2,
   },
   {
-    name: 'Mr. Pankaj Jain',
-    role: 'Co-Convener (Asst. Prof)',
+    name: 'Pankaj Jain',
+    role: 'Strategic Mind',
     photo: 'https://ik.imagekit.io/rcfcr7y0e/Screenshot%202025-09-04%20121209.png?updatedAt=1756976607127',
     accentColor: '#fb923c',
+    tilt: 2,
     imgScale: 1.4,
   },
 ]
 
-const COORDINATORS = [
+const ORGANIZER = [
   {
     name: 'Durgesh Singh',
-    role: 'Student Coordinator Lead',
-    photo: '/team-photos/durgesh-singh.jpg',
+    photo: 'https://ik.imagekit.io/codekigit/Durgest%20(%20organsiser%20&%20Platform%20Handler.jpg?updatedAt=1789038237721',
     accentColor: '#fbbf24',
-    instagram: 'https://instagram.com',
-    linkedin: 'https://linkedin.com',
+    tilt: -1.5,
+    instagram: 'https://www.instagram.com/becomingdurgesh?stkn=MWlvaml6MHk3cm92MQ==',
+    linkedin: 'https://www.linkedin.com/in/durgesh-kumar-singh-0a23542a3/',
   },
+]
+
+const TECHNICAL_TEAM = [
+  {
+    name: 'Sahil Vaishanv',
+    photo: 'https://ik.imagekit.io/rcfcr7y0e/1750825936202.jpeg?updatedAt=1756941821776',
+    accentColor: '#fbbf24',
+    tilt: 2,
+    instagram: 'https://www.instagram.com/sahil_vaishnav99?stkn=MTJpODRiOWtyYXN4Yg==',
+    linkedin: 'https://www.linkedin.com/in/sahil-vaishnav-77b759371/',
+  },
+  {
+    name: 'Rishi Goswami',
+    photo: 'https://ik.imagekit.io/rcfcr7y0e/WhatsApp%20Image%202025-09-03%20at%2016.21.57_74e28e25.jpg?updatedAt=1757792763548',
+    accentColor: '#f59e0b',
+    tilt: -1,
+    instagram: 'https://www.instagram.com/ronitgoswami_7/',
+    linkedin: 'https://www.linkedin.com/in/rishi-puri-21919b32b/',
+  },
+  {
+    name: 'Abhay Shekhawat',
+    photo: 'https://ik.imagekit.io/codekigit/abhay.jpeg',
+    accentColor: '#f5c344',
+    tilt: 1,
+    instagram: 'https://www.instagram.com/a6hay_sin9h?stkn=dmV5am9qcG11b3Rr',
+    linkedin: 'https://www.linkedin.com/in/abhay-singh-shekhawat-354218254/',
+  },
+  {
+    name: 'Lakshay Yadav',
+    photo: '/team/lakshay-yadav.jpg',
+    accentColor: '#fb923c',
+    tilt: -1.5,
+    linkedin: 'https://www.linkedin.com/in/shayisone/',
+  },
+]
+
+const CORE_TEAM = [
   {
     name: 'Mudit Paliwal',
     role: 'Co-Lead Sponsor Team',
     photo: '/team-photos/mudit-paliwal.jpg',
-    accentColor: '#f59e0b',
-    instagram: 'https://instagram.com',
-    linkedin: 'https://linkedin.com',
+    accentColor: '#fbbf24',
+    tilt: -1.5,
   },
   {
     name: 'Aman Goyal',
     role: 'Lead Designing Team',
     photo: '/team-photos/aman-goyal.png',
     accentColor: '#f5c344',
-    instagram: 'https://www.instagram.com/mr.goyal_214?stkn=MXF4djhkM3d0aXFseQ==',
-    linkedin: 'https://www.linkedin.com/in/aman-goyal-b516b032a',
+    tilt: 1.5,
   },
   {
     name: 'Prabhat Kumar',
     role: 'Co-Lead Sponsor Team',
     photo: '/team-photos/prabhat-kumar.jpg',
     accentColor: '#fb923c',
-    instagram: 'https://www.instagram.com/prabhat_kr18?stkn=MWlmcXkybzNyc2o4ZQ==',
-    linkedin: 'https://www.linkedin.com/in/prabhat-kumar-4b7957295',
+    tilt: -1,
   },
   {
     name: 'Eklavya Vaishnav',
     role: 'Lead PR Team',
     photo: '/team-photos/eklavya-vaishnav.jpg',
-    accentColor: '#fbbf24',
-    instagram: 'https://instagram.com',
-    linkedin: 'https://linkedin.com',
-    objectPosition: 'center center',
+    accentColor: '#f59e0b',
+    tilt: 1.5,
   },
   {
     name: 'Aman Bagda',
     role: 'Co-Lead Sponsor Team',
     photo: '/team-photos/aman-bagda.jpg',
-    accentColor: '#f59e0b',
-    instagram: 'https://instagram.com',
-    linkedin: 'https://linkedin.com',
+    accentColor: '#facc15',
+    tilt: -2,
   },
   {
     name: 'Sahil Yadav',
     role: 'Lead Guest Management Team',
     photo: '/team-photos/sahil-yadav.jpg',
-    accentColor: '#f5c344',
-    instagram: 'https://www.instagram.com/rao.sahil.05?stkn=MndycjhlbHFzM3o=',
-    linkedin: 'https://www.linkedin.com/in/sahil-yadav-423252402?utm_source=share_via&utm_content=profile&utm_medium=member_android',
+    accentColor: '#fbbf24',
+    tilt: 1,
   },
   {
     name: 'Lakshit Vashishtha',
     role: 'Lead Registration Team',
     photo: '/team-photos/lakshit-vashishtha.jpg',
-    accentColor: '#fb923c',
-    instagram: 'https://www.instagram.com/lakshitvashishtha?stkn=a2QzNHNtMW04Zzdt',
-    linkedin: 'https://www.linkedin.com/in/lakshit-vashishtha-3291a1295/',
-  },
-  {
-    name: 'Sahil Vaishnav',
-    role: 'Coordinator Technical Team',
-    photo: makeAvatar('SV', '#0a192f', '#38bdf8'),
-    accentColor: '#38bdf8',
-    instagram: 'https://instagram.com',
-    linkedin: 'https://linkedin.com',
-  },
-  {
-    name: 'Rishi Goswami',
-    role: 'Coordinator Technical Team',
-    photo: makeAvatar('RG', '#1e112a', '#a855f7'),
-    accentColor: '#a855f7',
-    instagram: 'https://instagram.com',
-    linkedin: 'https://linkedin.com',
-  },
-  {
-    name: 'Abhay Shekhawat',
-    role: 'Coordinator Technical Team',
-    photo: makeAvatar('AS', '#1c1917', '#facc15'),
-    accentColor: '#facc15',
-    instagram: 'https://instagram.com',
-    linkedin: 'https://linkedin.com',
-  },
-  {
-    name: 'Lakshya Yadav',
-    role: 'Coordinator Technical Team',
-    photo: makeAvatar('LY', '#062b24', '#2dd4bf'),
-    accentColor: '#2dd4bf',
-    instagram: 'https://instagram.com',
-    linkedin: 'https://linkedin.com',
+    accentColor: '#f5c344',
+    tilt: -1.5,
   },
 ]
 
-/* ─────────────────────────────────────────────────────────────────────── */
-/*  ARCADE PILL (page section badge — same vocabulary as Page 1)          */
-/* ─────────────────────────────────────────────────────────────────────── */
-function ArcadePill({ children }) {
+function SectionBadge({ children }) {
   return (
-    <div style={{
-      display: 'inline-flex', alignItems: 'center', gap: 7,
-      padding: '5px 16px', borderRadius: 999,
-      background: 'rgba(245,195,68,0.12)',
-      border: '2px solid rgba(245,195,68,0.45)',
-      boxShadow: '0 3px 0 rgba(179,130,23,0.5), 0 6px 18px rgba(245,195,68,0.12)',
-      marginBottom: 10,
-    }}>
+    <div
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 7,
+        padding: '5px 16px',
+        borderRadius: 999,
+        background: 'rgba(245,195,68,0.12)',
+        border: '2px solid rgba(245,195,68,0.45)',
+        boxShadow: '0 3px 0 rgba(179,130,23,0.5), 0 6px 18px rgba(245,195,68,0.12)',
+        marginBottom: 10,
+      }}
+    >
       <span className="font-pixel text-arcadeYellow tracking-widest uppercase" style={{ fontSize: 10 }}>
         {children}
       </span>
@@ -159,10 +143,7 @@ function ArcadePill({ children }) {
   )
 }
 
-/* ─────────────────────────────────────────────────────────────────────── */
-/*  SECTION HEADER                                                          */
-/* ─────────────────────────────────────────────────────────────────────── */
-function SectionHeader({ title }) {
+function SectionTitle({ title }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: -16 }}
@@ -171,30 +152,28 @@ function SectionHeader({ title }) {
       transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
       className="text-center mb-10"
     >
-      <ArcadePill>// {title}</ArcadePill>
+      <SectionBadge>// {title}</SectionBadge>
     </motion.div>
   )
 }
 
-/* ─────────────────────────────────────────────────────────────────────── */
-/*  WARM RULE                                                               */
-/* ─────────────────────────────────────────────────────────────────────── */
-function WarmRule() {
+function StarDivider() {
   return (
     <div className="flex items-center gap-4 my-14 max-w-2xl mx-auto px-6">
-      <div className="flex-1 h-px"
-        style={{ background: 'linear-gradient(90deg,transparent,rgba(245,195,68,0.35))' }} />
-      <span className="font-pixel text-arcadeYellow/40 tracking-widest text-[9px] uppercase">
-        ★ ★ ★
-      </span>
-      <div className="flex-1 h-px"
-        style={{ background: 'linear-gradient(90deg,rgba(245,195,68,0.35),transparent)' }} />
+      <div
+        className="flex-1 h-px"
+        style={{ background: 'linear-gradient(90deg, transparent, rgba(245,195,68,0.35))' }}
+      />
+      <span className="font-pixel text-arcadeYellow/40 tracking-widest text-[9px] uppercase">★ ★ ★</span>
+      <div
+        className="flex-1 h-px"
+        style={{ background: 'linear-gradient(90deg, rgba(245,195,68,0.35), transparent)' }}
+      />
     </div>
   )
 }
 
-/* ── Social icons (Instagram / LinkedIn) ── */
-function InstagramIcon({ size = 10 }) {
+function InstagramIcon({ size = ICON_SIZE }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <rect x="2" y="2" width="20" height="20" rx="5" />
@@ -204,7 +183,7 @@ function InstagramIcon({ size = 10 }) {
   )
 }
 
-function LinkedInIcon({ size = 10 }) {
+function LinkedInIcon({ size = ICON_SIZE }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
       <path d="M4.98 3.5C4.98 4.88 3.87 6 2.5 6S0 4.88 0 3.5 1.12 1 2.5 1s2.48 1.12 2.48 2.5zM.5 8h4v15h-4V8zm7.5 0h3.8v2.05h.05c.53-1 1.83-2.05 3.77-2.05 4.03 0 4.78 2.65 4.78 6.1V23h-4v-7.9c0-1.88-.03-4.3-2.62-4.3-2.63 0-3.03 2.05-3.03 4.17V23H8V8z" />
@@ -212,211 +191,229 @@ function LinkedInIcon({ size = 10 }) {
   )
 }
 
-/* ─────────────────────────────────────────────────────────────────────── */
-/*  ARCADE PLAYER CARD                                                      */
+function SocialPillButton({ href, label, accent, icon, text }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      title={label}
+      aria-label={label}
+      className="flex-1 inline-flex items-center justify-center gap-1.5 py-1 px-2 rounded bg-[#090d18] border border-amber-400/30 text-[9px] font-pixel text-amber-400 hover:text-white hover:border-amber-400 hover:bg-amber-400/15 transition-all uppercase shadow-inner"
+    >
+      {icon}
+      <span>{text}</span>
+    </a>
+  )
+}
 
-function BadgeCard({ member, delay = 0, large = false, fullWidth = false, social = false }) {
-  const [imgError, setImgError] = useState(false)
-  const ac  = member.accentColor || '#f5c344'
-  const cardW = large ? 'w-64 sm:w-72' : fullWidth ? 'w-full' : 'w-56 sm:w-60'
-  const initials = member.name.split(' ').map(n => n[0]).join('').slice(0, 2)
-  const photoSrc = imgError ? makeAvatar(initials, '#10121a', ac) : member.photo
+function SocialButton({ href, label, accent, children }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      title={label}
+      aria-label={label}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: BTN_SIZE,
+        height: BTN_SIZE,
+        borderRadius: 999,
+        color: accent,
+        background: 'rgba(2,8,23,0.55)',
+        border: `1.5px solid ${accent}55`,
+        textDecoration: 'none',
+        transition: 'border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = accent
+        e.currentTarget.style.color = '#fff'
+        e.currentTarget.style.boxShadow = `0 0 12px ${accent}66`
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = `${accent}55`
+        e.currentTarget.style.color = accent
+        e.currentTarget.style.boxShadow = 'none'
+      }}
+    >
+      {children}
+    </a>
+  )
+}
 
-  // Format name: on 6-col cards, split into lines (First \n Last) matching Image 1
-  const displayName = large ? member.name : member.name.split(' ').join('\n')
+function MemberCard({ member, delay = 0, large = false, showRole = false }) {
+  const cardRef = useRef(null)
+  const rafRef = useRef(null)
+  const [hovered, setHovered] = useState(false)
+  const accent = member.accentColor
+
+  const handleMouseMove = useCallback(
+    (e) => {
+      const card = cardRef.current
+      if (!card) return
+      cancelAnimationFrame(rafRef.current)
+      rafRef.current = requestAnimationFrame(() => {
+        const { left, top, width, height } = card.getBoundingClientRect()
+        const xNorm = (e.clientX - left) / width - 0.5
+        const yNorm = (e.clientY - top) / height - 0.5
+        card.style.transform = `perspective(900px) rotateX(${(-yNorm * 8).toFixed(2)}deg) rotateY(${(xNorm * 8).toFixed(2)}deg) rotate(${member.tilt}deg)`
+      })
+    },
+    [member.tilt]
+  )
+
+  const handleMouseLeave = useCallback(() => {
+    cancelAnimationFrame(rafRef.current)
+    const card = cardRef.current
+    if (card) {
+      card.style.transition = 'transform 0.45s cubic-bezier(0.23,1,0.32,1)'
+      card.style.transform = `rotate(${member.tilt}deg)`
+      setTimeout(() => {
+        if (card) card.style.transition = ''
+      }, 460)
+      setHovered(false)
+    }
+  }, [member.tilt])
+
+  useEffect(() => () => cancelAnimationFrame(rafRef.current), [])
+
+  const cardWidth = large ? 'w-56 sm:w-64' : 'w-48 sm:w-52'
+  const paddingY = large ? '18px' : '14px'
+  const stalkH = large ? 28 : 20
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 24 }}
+      initial={{ opacity: 0, y: 30 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: '-40px' }}
-      transition={{ duration: 0.5, delay, ease: [0.22, 1, 0.36, 1] }}
-      className={`${cardW} h-full flex flex-col`}
+      transition={{ duration: 0.55, delay, ease: [0.22, 1, 0.36, 1] }}
+      className={`${cardWidth} flex-shrink-0`}
     >
-      {/* Arcade push-button body — lifts on hover, hard offset shadow */}
+      {/* Top hanger line */}
+      <div className="flex justify-center">
+        <div
+          style={{
+            width: 2,
+            height: stalkH,
+            background: `linear-gradient(to bottom, transparent, ${accent}80)`,
+            borderRadius: 1,
+          }}
+        />
+      </div>
+
+      {/* Main card box */}
       <div
-        className="group w-full h-full flex flex-col justify-between transition-all duration-150 ease-out hover:-translate-y-1.5 active:translate-y-0"
+        ref={cardRef}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        onMouseEnter={() => setHovered(true)}
         style={{
-          position: 'relative',
-          background: 'linear-gradient(180deg, #10121a 0%, #0a0b12 100%)',
-          border: `2px solid ${ac}55`,
-          boxShadow: '0 5px 0 #04060c, 0 10px 20px rgba(0,0,0,0.55)',
-          transitionProperty: 'transform, border-color, box-shadow',
-        }}
-        onMouseEnter={e => {
-          e.currentTarget.style.borderColor = ac
-          e.currentTarget.style.boxShadow = `0 8px 0 #04060c, 0 14px 26px rgba(0,0,0,0.6), 0 0 16px ${ac}30`
-        }}
-        onMouseLeave={e => {
-          e.currentTarget.style.borderColor = `${ac}55`
-          e.currentTarget.style.boxShadow = '0 5px 0 #04060c, 0 10px 20px rgba(0,0,0,0.55)'
+          transform: `rotate(${member.tilt}deg)`,
+          clipPath:
+            'polygon(12px 0%,calc(100% - 12px) 0%,100% 12px,100% calc(100% - 12px),calc(100% - 12px) 100%,12px 100%,0% calc(100% - 12px),0% 12px)',
+          background: 'rgba(2,8,23,0.55)',
+          backdropFilter: 'blur(12px)',
+          border: `1.5px solid ${hovered ? accent : accent + '55'}`,
+          boxShadow: hovered
+            ? `0 0 0 1px ${accent}40, 0 12px 28px rgba(0,0,0,0.6)`
+            : `0 0 0 1px ${accent}18, 0 8px 22px rgba(0,0,0,0.5)`,
+          transition: 'box-shadow 0.3s ease, border-color 0.3s ease',
+          cursor: 'default',
         }}
       >
-        <div>
-          {/* Top hazard strip — pixel steps in accent colour */}
-          <div style={{
-            height: 4,
-            background: `repeating-linear-gradient(90deg, ${ac} 0 8px, transparent 8px 16px)`,
-            opacity: 0.85,
-          }} />
+        <div style={{ height: 2, background: `linear-gradient(90deg, transparent, ${accent}, transparent)` }} />
 
-          {/* Photo bay — HUD corner brackets + CRT scanlines */}
-          <div style={{
-            position: 'relative', aspectRatio: '1/1', overflow: 'hidden',
-            margin: 5,
-            border: '1px solid rgba(255,184,0,0.14)',
-            background: '#0a0804',
-          }}>
-
-            {/* HUD corner brackets (brighten with card hover) */}
-            <span className="transition-opacity duration-150 opacity-60 group-hover:opacity-100"
-              style={{ position:'absolute', top:4, left:4, width:8, height:8,
-                borderTop:`2px solid ${ac}`, borderLeft:`2px solid ${ac}`, pointerEvents:'none' }} />
-            <span className="transition-opacity duration-150 opacity-60 group-hover:opacity-100"
-              style={{ position:'absolute', top:4, right:4, width:8, height:8,
-                borderTop:`2px solid ${ac}`, borderRight:`2px solid ${ac}`, pointerEvents:'none' }} />
-            <span className="transition-opacity duration-150 opacity-60 group-hover:opacity-100"
-              style={{ position:'absolute', bottom:4, left:4, width:8, height:8,
-                borderBottom:`2px solid ${ac}`, borderLeft:`2px solid ${ac}`, pointerEvents:'none' }} />
-            <span className="transition-opacity duration-150 opacity-60 group-hover:opacity-100"
-              style={{ position:'absolute', bottom:4, right:4, width:8, height:8,
-                borderBottom:`2px solid ${ac}`, borderRight:`2px solid ${ac}`, pointerEvents:'none' }} />
-
-            <img
-              src={photoSrc}
-              alt={member.name}
-              onError={() => setImgError(true)}
-              style={{
-                width: '100%', height: '100%', objectFit: 'cover',
-                objectPosition: member.objectPosition || 'center top', display: 'block',
-                transform: `scale(${member.imgScale ?? 1})`, transformOrigin: 'center top',
-                filter: 'grayscale(0.25) contrast(1.05)',
-                transition: 'filter 0.25s ease',
-              }}
-              loading="lazy"
-              onMouseEnter={e => { e.currentTarget.style.filter = 'grayscale(0) contrast(1.02)' }}
-              onMouseLeave={e => { e.currentTarget.style.filter = 'grayscale(0.25) contrast(1.05)' }}
-            />
-
-            {/* CRT scanlines over the photo */}
-            <div className="scanlines-overlay" style={{ position: 'absolute', inset: 0, opacity: 0.5 }} />
-          </div>
+        {/* Photo container with retro scanlines */}
+        <div style={{ position: 'relative', aspectRatio: '1/1', overflow: 'hidden', background: '#0a0804' }}>
+          <img
+            src={member.photo}
+            alt={member.name}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              objectPosition: 'top',
+              display: 'block',
+              transform: `scale(${member.imgScale ?? 1})`,
+              transformOrigin: 'center top',
+            }}
+            loading="lazy"
+          />
+          {/* Subtle retro scanlines over photo */}
+          <div
+            className="absolute inset-0 pointer-events-none opacity-20"
+            style={{
+              backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.06) 2px, rgba(255,255,255,0.06) 4px)'
+            }}
+          />
         </div>
 
-        {/* ID plate — name + role + social buttons */}
-        <div className="flex-1 flex flex-col justify-between" style={{ padding: large ? '14px 16px 16px' : '9px 8px 10px', textAlign: 'center' }}>
-          <div>
-            <div className="min-h-[2.3rem] flex items-center justify-center">
-              <h3 className="font-pixel font-black uppercase pixel-shadow-white text-center whitespace-pre-line"
-                style={{
-                  fontSize: large ? '0.95rem' : '0.72rem',
-                  color: '#f8fafc',
-                  lineHeight: 1.25,
-                  letterSpacing: '0.04em',
-                }}>
-                {displayName}
-              </h3>
-            </div>
+        {/* Info */}
+        <div style={{ padding: `${paddingY} 12px`, textAlign: 'center' }}>
+          <h3
+            className="font-pixel font-black uppercase tracking-wide"
+            style={{
+              fontSize: large ? FS_TITLE_LG : FS_TITLE_SM,
+              color: '#f8fafc',
+              lineHeight: 1.2,
+              marginBottom: showRole ? 6 : 0,
+            }}
+          >
+            {member.name}
+          </h3>
 
-            {/* Role pill — mini arcade badge */}
-            <div className="min-h-[2.2rem] flex items-center justify-center mt-1.5">
+          {showRole && member.role && (
+            <div className="my-2 flex justify-center">
               <span
-                className="inline-block font-pixel uppercase tracking-wider transition-transform duration-100 group-hover:-translate-y-px text-center"
-                style={{
-                  fontSize: large ? 9 : 7,
-                  color: ac,
-                  background: `${ac}14`,
-                  border: `1.5px solid ${ac}66`,
-                  boxShadow: `0 2px 0 #04060c`,
-                  padding: '2.5px 6px',
-                  lineHeight: 1.25,
-                }}>
+                className="font-arcade text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded border border-amber-400/40 bg-amber-400/10 text-amber-300 shadow-sm leading-snug break-words"
+              >
                 {member.role}
               </span>
             </div>
-          </div>
+          )}
 
-          <div className="mt-auto pt-2.5">
-            {/* Ticket-stub divider */}
-            <div style={{
-              margin: '0 auto 8px', width: '70%', height: 0,
-              borderTop: `1px dashed ${ac}35`,
-            }} />
-
-            {/* Social buttons — ribbed arcade press keys */}
-            {social && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                <a
-                  href={member.instagram || 'https://www.instagram.com'}
-                  target="_blank"
-                  rel="noreferrer"
-                  title="Instagram"
-                  className="btn-ribbed flex items-center justify-center gap-1 transition-all duration-100 active:translate-y-0.5"
-                  style={{
-                    padding: '5px 2px',
-                    fontFamily: '"Silkscreen", monospace',
-                    fontSize: 7,
-                    letterSpacing: '0.1em',
-                    textTransform: 'uppercase',
-                    textDecoration: 'none',
-                    color: ac,
-                    background: '#131722',
-                    border: `1.5px solid ${ac}44`,
-                    boxShadow: '0 2.5px 0 #04060c',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = ac; e.currentTarget.style.color = '#fff' }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = `${ac}44`; e.currentTarget.style.color = ac }}
-                >
-                  <InstagramIcon size={8} /> Insta
-                </a>
-                <a
-                  href={member.linkedin || 'https://www.linkedin.com'}
-                  target="_blank"
-                  rel="noreferrer"
-                  title="LinkedIn"
-                  className="btn-ribbed flex items-center justify-center gap-1 transition-all duration-100 active:translate-y-0.5"
-                  style={{
-                    padding: '5px 2px',
-                    fontFamily: '"Silkscreen", monospace',
-                    fontSize: 7,
-                    letterSpacing: '0.1em',
-                    textTransform: 'uppercase',
-                    textDecoration: 'none',
-                    color: ac,
-                    background: '#131722',
-                    border: `1.5px solid ${ac}44`,
-                    boxShadow: '0 2.5px 0 #04060c',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = ac; e.currentTarget.style.color = '#fff' }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = `${ac}44`; e.currentTarget.style.color = ac }}
-                >
-                  <LinkedInIcon size={8} /> Link
-                </a>
-              </div>
-            )}
-          </div>
+          {!large && (member.instagram || member.linkedin) && (
+            <div className="flex justify-center gap-1.5 mt-2.5">
+              {member.instagram && (
+                <SocialPillButton
+                  href={member.instagram}
+                  label={`${member.name} on Instagram`}
+                  accent={accent}
+                  icon={<InstagramIcon size={12} />}
+                  text="INSTA"
+                />
+              )}
+              {member.linkedin && (
+                <SocialPillButton
+                  href={member.linkedin}
+                  label={`${member.name} on LinkedIn`}
+                  accent={accent}
+                  icon={<LinkedInIcon size={12} />}
+                  text="LINK"
+                />
+              )}
+            </div>
+          )}
         </div>
       </div>
     </motion.div>
   )
 }
 
-/* ─────────────────────────────────────────────────────────────────────── */
-/*  PAGE                                                                    */
-/* ─────────────────────────────────────────────────────────────────────── */
 export default function TeamPage() {
   return (
-    <div className="relative min-h-screen w-full py-24 px-4 sm:px-6">
-
-      <div className="relative z-10 max-w-[1400px] mx-auto">
-
-        {/* ── Page header ── */}
+    <div className="relative min-h-screen w-full py-24 px-6">
+      <div className="relative z-10 max-w-6xl mx-auto">
+        {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -22 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
-          className="text-center mb-16"
+          className="text-center mb-20"
         >
           <h1
             className="voxel-3d-text voxel-white-block font-pixel font-black uppercase text-center"
@@ -424,32 +421,58 @@ export default function TeamPage() {
           >
             The Team
           </h1>
-          <p style={{ color: 'rgba(203,193,170,0.55)', fontSize: 14, maxWidth: 420,
-            margin: '14px auto 0', lineHeight: 1.6 }}>
+          <p
+            style={{
+              color: 'rgba(203,193,170,0.55)',
+              fontSize: 14,
+              maxWidth: 420,
+              margin: '14px auto 0',
+              lineHeight: 1.6,
+            }}
+          >
             The crew that architects, powers, and launches Codefiesta every year.
           </p>
         </motion.div>
 
-        {/* ══ CONVENERS ══ */}
-        <SectionHeader title="Conveners" />
-        <div className="flex flex-wrap justify-center gap-10 mb-12">
-          {CONVENERS.map((m, i) => (
-            <BadgeCard key={m.name} member={m} delay={0.08 + i * 0.12} large />
+        {/* 1. Conveners */}
+        <SectionTitle title="Conveners" />
+        <div className="flex flex-wrap justify-center gap-12">
+          {CONVENERS.map((m, idx) => (
+            <MemberCard key={m.name} member={m} delay={0.08 + idx * 0.12} large={true} showRole={true} />
           ))}
         </div>
 
-        <WarmRule />
+        <StarDivider />
 
-        {/* ══ COORDINATORS — 6 per row on desktop matching Image 1 ══ */}
-        <SectionHeader title="Coordinators" />
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-3.5 md:gap-4 max-w-[1400px] mx-auto items-stretch">
-          {COORDINATORS.map((m, i) => (
-            <BadgeCard key={m.name} member={m} delay={0.04 + i * 0.04} fullWidth social />
+        {/* 2. Organizer */}
+        <SectionTitle title="Organizer" />
+        <div className="flex flex-wrap justify-center gap-8">
+          {ORGANIZER.map((m, idx) => (
+            <MemberCard key={m.name} member={m} delay={0.06 + idx * 0.08} showRole={true} />
           ))}
         </div>
 
+        <StarDivider />
+
+        {/* 3. Technical Team */}
+        <SectionTitle title="Technical Team" />
+        <div className="flex flex-wrap justify-center gap-8">
+          {TECHNICAL_TEAM.map((m, idx) => (
+            <MemberCard key={m.name} member={m} delay={0.06 + idx * 0.08} />
+          ))}
+        </div>
+
+        <StarDivider />
+
+        {/* 4. Core Team */}
+        <SectionTitle title="Core Team" />
+        <div className="flex flex-wrap justify-center gap-6 sm:gap-8">
+          {CORE_TEAM.map((m, idx) => (
+            <MemberCard key={m.name} member={m} delay={0.05 + idx * 0.06} showRole={true} />
+          ))}
+        </div>
       </div>
     </div>
   )
 }
+

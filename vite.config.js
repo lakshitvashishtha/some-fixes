@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { sendOtpEmail, sendRegistrationEmail, sendPaymentVerifiedEmail } from './mailer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,6 +32,37 @@ function sharedStatePlugin() {
     } catch (e) {
       console.error('[sharedStatePlugin] Error writing DB:', e);
     }
+  };
+
+  const viteOtpLimits = new Map();
+  const viteActiveOtps = new Map();
+
+  const getViteOtp = (email) => {
+    const mem = viteActiveOtps.get(email);
+    if (mem) return mem;
+    const db = readDb();
+    return db.activeOtps?.[email] || null;
+  };
+
+  const saveViteOtp = (email, record) => {
+    viteActiveOtps.set(email, record);
+    try {
+      const db = readDb();
+      if (!db.activeOtps) db.activeOtps = {};
+      db.activeOtps[email] = record;
+      writeDb(db);
+    } catch {}
+  };
+
+  const deleteViteOtp = (email) => {
+    viteActiveOtps.delete(email);
+    try {
+      const db = readDb();
+      if (db.activeOtps && db.activeOtps[email]) {
+        delete db.activeOtps[email];
+        writeDb(db);
+      }
+    } catch {}
   };
 
   return {
@@ -268,9 +300,193 @@ function sharedStatePlugin() {
                     (t.leader?.email || '').toLowerCase() === cleanEmail ||
                     (t.members || []).some((m) => (m.email || '').toLowerCase() === cleanEmail)
                   );
+                if (exists) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ exists: true, error: `Email "${cleanEmail}" is already registered. Please log in instead.` }));
+                  return;
+                }
                 res.setHeader('Content-Type', 'application/json');
                 res.setHeader('Access-Control-Allow-Origin', '*');
-                res.end(JSON.stringify({ exists }));
+                res.end(JSON.stringify({ exists: false, available: true }));
+              } catch (err) {
+                res.statusCode = 400;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: err.message }));
+              }
+            });
+            return;
+          }
+        }
+
+        // POST /api/auth/send-otp
+        if (req.url === '/api/auth/send-otp') {
+          if (req.method === 'POST') {
+            let body = '';
+            req.on('data', (chunk) => { body += chunk; });
+            req.on('end', async () => {
+              try {
+                const incoming = JSON.parse(body || '{}');
+                const cleanEmail = String(incoming.email || '').toLowerCase().trim();
+                if (!cleanEmail || !cleanEmail.includes('@')) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'Please enter a valid email address.' }));
+                  return;
+                }
+
+                const today = new Date().toISOString().slice(0, 10);
+                let rateRecord = viteOtpLimits.get(cleanEmail) || { date: today, attempts: 0 };
+                if (rateRecord.date !== today) {
+                  rateRecord = { date: today, attempts: 0 };
+                }
+
+                if (rateRecord.attempts >= 5) {
+                  res.statusCode = 429;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'Daily login limit reached (5 attempts per day). Please try again tomorrow or contact support@codefiesta.in.' }));
+                  return;
+                }
+
+                rateRecord.attempts += 1;
+                viteOtpLimits.set(cleanEmail, rateRecord);
+
+                const otp = String(Math.floor(100000 + Math.random() * 900000));
+                saveViteOtp(cleanEmail, {
+                  otp,
+                  expiresAt: Date.now() + 10 * 60 * 1000, // Exactly 10 minutes (600,000 ms)
+                  createdAt: Date.now(),
+                });
+
+                let emailDelivered = false;
+                try {
+                  await sendOtpEmail({
+                    to: cleanEmail, // Directly dispatched to the candidate's email
+                    otp,
+                    attemptsLeft: 5 - rateRecord.attempts,
+                  });
+                  emailDelivered = true;
+                  console.log(`[Vite Dev] Successfully delivered OTP email via Zoho SMTP to ${cleanEmail}`);
+                } catch (sendErr) {
+                  console.error('[Vite Dev] SMTP send failed:', sendErr?.message || sendErr);
+                }
+
+                res.setHeader('Content-Type', 'application/json');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                res.end(JSON.stringify({
+                  success: true,
+                  delivered: emailDelivered,
+                  message: emailDelivered
+                    ? `Official 6-digit login OTP dispatched to ${cleanEmail} from support@protechy.in.`
+                    : `Login OTP generated for ${cleanEmail}. (Check inbox or spam)`,
+                  attemptsLeft: 5 - rateRecord.attempts,
+                  devOtp: otp,
+                }));
+              } catch (err) {
+                res.statusCode = 400;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: err.message }));
+              }
+            });
+            return;
+          }
+        }
+
+        // POST /api/auth/verify-otp (Enforces 10-minute validity)
+        if (req.url === '/api/auth/verify-otp') {
+          if (req.method === 'POST') {
+            let body = '';
+            req.on('data', (chunk) => { body += chunk; });
+            req.on('end', () => {
+              try {
+                const incoming = JSON.parse(body || '{}');
+                const cleanEmail = String(incoming.email || '').toLowerCase().trim();
+                const otp = String(incoming.otp || '').trim();
+                if (!cleanEmail || !otp) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'Email and 6-digit OTP are required.' }));
+                  return;
+                }
+
+                const record = getViteOtp(cleanEmail);
+                if (!record) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'No active OTP found for this email. Please request a verification code.' }));
+                  return;
+                }
+                if (Date.now() > record.expiresAt) {
+                  deleteViteOtp(cleanEmail);
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'OTP has expired. Verification codes are valid for 10 minutes only. Please request a new code.' }));
+                  return;
+                }
+                if (record.otp !== otp) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'Invalid verification code. Please check the 6-digit OTP sent to your email.' }));
+                  return;
+                }
+                deleteViteOtp(cleanEmail);
+
+                const db = readDb();
+                let matchedUser = (db.users || []).find((u) => (u.email || '').toLowerCase() === cleanEmail);
+                if (!matchedUser) {
+                  for (const t of db.teams || []) {
+                    if (
+                      (t.leader?.email && t.leader.email.toLowerCase() === cleanEmail) ||
+                      (t.leaderEmail && t.leaderEmail.toLowerCase() === cleanEmail) ||
+                      (t.leader_email && t.leader_email.toLowerCase() === cleanEmail)
+                    ) {
+                      matchedUser = {
+                        id: t.leader?.id || ('usr_' + t.id),
+                        email: cleanEmail,
+                        name: t.leader?.name || `${t.leader?.firstName || ''} ${t.leader?.lastName || ''}`.trim() || 'Squad Leader',
+                        firstName: t.leader?.firstName || '',
+                        lastName: t.leader?.lastName || '',
+                        phone: t.leader?.phone || '',
+                        college: t.leader?.college || t.college || '',
+                        role: 'leader',
+                        teamId: t.id,
+                        teamName: t.name,
+                      };
+                      break;
+                    }
+                    const m = (t.members || []).find((mem) => (mem.email || '').toLowerCase() === cleanEmail);
+                    if (m) {
+                      matchedUser = {
+                        id: m.id || ('usr_' + t.id),
+                        email: cleanEmail,
+                        name: m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Operative',
+                        firstName: m.firstName || '',
+                        lastName: m.lastName || '',
+                        phone: m.phone || '',
+                        college: m.college || t.college || '',
+                        role: m.role || 'member',
+                        teamId: t.id,
+                        teamName: t.name,
+                      };
+                      break;
+                    }
+                  }
+                }
+
+                if (!matchedUser) {
+                  matchedUser = {
+                    id: 'usr_' + Math.random().toString(36).slice(2, 9),
+                    email: cleanEmail,
+                    name: cleanEmail.split('@')[0],
+                    role: 'leader',
+                  };
+                }
+
+                const safeUser = { ...matchedUser };
+                delete safeUser.password;
+                res.setHeader('Content-Type', 'application/json');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                res.end(JSON.stringify({ success: true, user: safeUser }));
               } catch (err) {
                 res.statusCode = 400;
                 res.setHeader('Content-Type', 'application/json');
@@ -447,9 +663,31 @@ function sharedStatePlugin() {
                 // Merge opsState
                 let mergedOpsState = current.opsState || {};
                 if (incoming.opsState) {
+                  let mergedEvals = mergedOpsState.evaluations || [];
+                  if (incoming.opsState.evaluations) {
+                    const evalMap = new Map();
+                    (mergedOpsState.evaluations || []).forEach((e) => {
+                      if (e && (e.id || e.teamId)) evalMap.set(e.id || `${e.teamId}_${e.round || 'round1'}`, e);
+                    });
+                    (incoming.opsState.evaluations || []).forEach((e) => {
+                      if (e && (e.id || e.teamId)) evalMap.set(e.id || `${e.teamId}_${e.round || 'round1'}`, e);
+                    });
+                    mergedEvals = Array.from(evalMap.values());
+                  }
+
+                  let mergedGate = mergedOpsState.gateCheckins || {};
+                  if (incoming.opsState.gateCheckins) {
+                    mergedGate = { ...mergedGate, ...incoming.opsState.gateCheckins };
+                    for (const [tid, checkins] of Object.entries(incoming.opsState.gateCheckins)) {
+                      mergedGate[tid] = { ...(mergedGate[tid] || {}), ...checkins };
+                    }
+                  }
+
                   mergedOpsState = {
                     ...mergedOpsState,
                     ...incoming.opsState,
+                    evaluations: incoming.opsState.evaluations ? mergedEvals : (mergedOpsState.evaluations || []),
+                    gateCheckins: incoming.opsState.gateCheckins ? mergedGate : (mergedOpsState.gateCheckins || {}),
                     tableAssignments: incoming.opsState.tableAssignments !== undefined
                       ? incoming.opsState.tableAssignments
                       : ((mergedOpsState && mergedOpsState.tableAssignments) || {}),
@@ -495,13 +733,19 @@ function sharedStatePlugin() {
           if (req.method === 'POST') {
             let body = '';
             req.on('data', (chunk) => { body += chunk; });
-            req.on('end', () => {
+            req.on('end', async () => {
               try {
                 const incoming = JSON.parse(body || '{}');
-                const { teamId, verified, notes } = incoming;
+                const { teamId, verified, notes, teamData, candidate } = incoming;
                 const isVerified = verified !== false;
                 const db = readDb();
-                const team = (db.teams || []).find((t) => t.id === teamId || t.code === teamId);
+                let team = (db.teams || []).find((t) => t.id === teamId || t.code === teamId);
+                if (!team && (teamData || candidate)) {
+                  team = teamData || candidate;
+                  db.teams = db.teams || [];
+                  db.teams.push(team);
+                }
+
                 if (!team) {
                   res.statusCode = 404;
                   res.setHeader('Content-Type', 'application/json');
@@ -517,6 +761,27 @@ function sharedStatePlugin() {
                 };
                 team.status = isVerified ? 'confirmed' : 'rejected';
 
+                let emailDelivered = false;
+                let emailError = null;
+                const leaderEmail = team.leader?.email || team.leader_email || incoming.leaderEmail || teamData?.leader?.email;
+                const leaderName = team.leader?.name || (team.leader?.firstName ? `${team.leader.firstName} ${team.leader.lastName || ''}`.trim() : 'Participant');
+
+                if (isVerified && leaderEmail) {
+                  try {
+                    console.log(`[Vite Dev] Dispatching selection confirmed email via Zoho SMTP to: ${leaderEmail} (Team: ${team.name})`);
+                    const info = await sendPaymentVerifiedEmail({
+                      to: leaderEmail,
+                      leaderName,
+                      teamName: team.name
+                    });
+                    emailDelivered = !!info;
+                    console.log(`[Vite Dev] ✓ Verified payment email sent to ${leaderEmail}`);
+                  } catch (err) {
+                    emailError = err.message;
+                    console.error('[Verify Payment Dev Email Dispatch Failed]:', err.message);
+                  }
+                }
+
                 writeDb(db);
                 res.setHeader('Content-Type', 'application/json');
                 res.setHeader('Access-Control-Allow-Origin', '*');
@@ -525,9 +790,11 @@ function sharedStatePlugin() {
                   team,
                   isVerified,
                   emailDispatched: isVerified ? {
-                    to: team.leader?.email,
+                    to: leaderEmail,
                     teamName: team.name,
-                    subject: `[CONFIRMED] Codefiesta 5.0 Official Pass Issued — ${team.name}`
+                    subject: `Registration & Payment Confirmed: Welcome to CODEFIESTA 5.0! — Team ${team.name}`,
+                    delivered: emailDelivered,
+                    error: emailError
                   } : null
                 }));
               } catch (err) {
@@ -697,15 +964,21 @@ function sharedStatePlugin() {
                   return;
                 }
 
+                // Incomplete or dropped registrations without payment are strictly NOT saved on the server
                 const utr = String(incoming.payment?.utr || incoming.utr || '').trim();
-                if (utr) {
-                  const duplicateUtr = allTeams.find((t) => (t.payment?.utr || '').trim().toLowerCase() === utr.toLowerCase());
-                  if (duplicateUtr) {
-                    res.statusCode = 400;
-                    res.setHeader('Content-Type', 'application/json');
-                    res.end(JSON.stringify({ error: `UTR "${utr}" has already been submitted by squad "${duplicateUtr.name}". Each squad registration requires a unique payment transaction.` }));
-                    return;
-                  }
+                if (!utr || utr.length < 6) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'Valid payment UTR reference is required to register a squad. Incomplete registrations without payment are not saved on the server.' }));
+                  return;
+                }
+
+                const duplicateUtr = allTeams.find((t) => (t.payment?.utr || '').trim().toLowerCase() === utr.toLowerCase());
+                if (duplicateUtr) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: `UTR "${utr}" has already been submitted by squad "${duplicateUtr.name}". Each squad registration requires a unique payment transaction.` }));
+                  return;
                 }
 
                 const newTeam = {
@@ -743,7 +1016,8 @@ function sharedStatePlugin() {
 
                 res.setHeader('Content-Type', 'application/json');
                 res.setHeader('Access-Control-Allow-Origin', '*');
-                res.end(JSON.stringify({ success: true, team: newTeam }));
+                const safeLeaderUser = leaderEmail ? (db.users || []).find((u) => (u.email || '').toLowerCase() === leaderEmail) : null;
+                res.end(JSON.stringify({ success: true, team: newTeam, user: safeLeaderUser }));
               } catch (err) {
                 res.statusCode = 400;
                 res.setHeader('Content-Type', 'application/json');
@@ -862,6 +1136,361 @@ function sharedStatePlugin() {
           res.setHeader('Access-Control-Allow-Origin', '*');
           res.end(JSON.stringify({ success: true, team: targetTeam || null }));
           return;
+        }
+
+        // POST /api/mentor/login
+        if (req.url === '/api/mentor/login') {
+          if (req.method === 'POST') {
+            let body = '';
+            req.on('data', (chunk) => { body += chunk; });
+            req.on('end', () => {
+              try {
+                const incoming = JSON.parse(body || '{}');
+                const cleanEmail = String(incoming.email || '').toLowerCase().trim();
+                const password = String(incoming.password || '');
+                const db = readDb();
+                const found = (db.opsState?.mentors || []).find(
+                  (m) => (m.email || '').toLowerCase() === cleanEmail && m.password === password
+                );
+                if (found) {
+                  res.setHeader('Content-Type', 'application/json');
+                  res.setHeader('Access-Control-Allow-Origin', '*');
+                  res.end(JSON.stringify({ success: true, mentor: found }));
+                  return;
+                }
+                if (
+                  (cleanEmail === 'mentor.ai@codefiesta.in' && password === 'mentor_access_cf5') ||
+                  (cleanEmail === 'mentor@codefiesta.in' && password === 'mentor123')
+                ) {
+                  res.setHeader('Content-Type', 'application/json');
+                  res.setHeader('Access-Control-Allow-Origin', '*');
+                  res.end(JSON.stringify({
+                    success: true,
+                    mentor: {
+                      id: 'men_default',
+                      name: 'Dr. Rajesh Sharma',
+                      email: cleanEmail,
+                      track: 'agentic_ai',
+                      tables: 'T-01 - T-20',
+                    },
+                  }));
+                  return;
+                }
+                res.statusCode = 401;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: 'Invalid mentor credentials.' }));
+              } catch (err) {
+                res.statusCode = 400;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: err.message }));
+              }
+            });
+            return;
+          }
+        }
+
+        // POST /api/mentor/evaluate
+        if (req.url === '/api/mentor/evaluate') {
+          if (req.method === 'POST') {
+            let body = '';
+            req.on('data', (chunk) => { body += chunk; });
+            req.on('end', () => {
+              try {
+                const incoming = JSON.parse(body || '{}');
+                const db = readDb();
+                const opsState = db.opsState || {};
+                const roundKey = incoming.round === 'round2' ? 'round2' : 'round1';
+                const roundLabel = roundKey === 'round2' ? 'Second Assessment' : 'First Assessment';
+
+                if (!opsState.evaluationRounds?.[roundKey]) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: `${roundLabel} is currently LOCKED by Admin Ops. Please wait for the ground round announcement.` }));
+                  return;
+                }
+
+                const existing = (opsState.evaluations || []).find(
+                  (e) => e.teamId === incoming.teamId && (e.round === roundKey || (!e.round && roundKey === 'round1'))
+                );
+                if (existing && existing.locked) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: `Evaluation for ${roundLabel} is permanently locked and cannot be modified.` }));
+                  return;
+                }
+
+                const total =
+                  Number(incoming.scores?.innovation || 0) +
+                  Number(incoming.scores?.tech || 0) +
+                  Number(incoming.scores?.feasibility || 0) +
+                  Number(incoming.scores?.pitch || 0);
+
+                const evalItem = {
+                  id: 'eval_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+                  teamId: incoming.teamId,
+                  teamName: incoming.teamName || 'Squad',
+                  tableNumber: incoming.tableNumber || (opsState.tableAssignments?.[incoming.teamId] || null),
+                  round: roundKey,
+                  roundName: roundLabel,
+                  mentorEmail: incoming.mentorEmail,
+                  mentorName: incoming.mentorName || 'Evaluator',
+                  scores: {
+                    innovation: Number(incoming.scores?.innovation || 0),
+                    tech: Number(incoming.scores?.tech || 0),
+                    feasibility: Number(incoming.scores?.feasibility || 0),
+                    pitch: Number(incoming.scores?.pitch || 0),
+                  },
+                  innovation: Number(incoming.scores?.innovation || 0),
+                  tech: Number(incoming.scores?.tech || 0),
+                  feasibility: Number(incoming.scores?.feasibility || 0),
+                  pitch: Number(incoming.scores?.pitch || 0),
+                  total,
+                  notes: incoming.notes || incoming.comments || '',
+                  comments: incoming.notes || incoming.comments || '',
+                  locked: true,
+                  lockedAt: new Date().toISOString(),
+                  timestamp: new Date().toISOString(),
+                };
+
+                opsState.evaluations = [
+                  ...(opsState.evaluations || []).filter(
+                    (e) => !(e.teamId === incoming.teamId && (e.round === roundKey || (!e.round && roundKey === 'round1')))
+                  ),
+                  evalItem,
+                ];
+                db.opsState = opsState;
+                writeDb(db);
+
+                res.setHeader('Content-Type', 'application/json');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                res.end(JSON.stringify({ success: true, evaluation: evalItem }));
+              } catch (err) {
+                res.statusCode = 400;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: err.message }));
+              }
+            });
+            return;
+          }
+        }
+
+        // POST /api/gate/login
+        if (req.url === '/api/gate/login') {
+          if (req.method === 'POST') {
+            let body = '';
+            req.on('data', (chunk) => { body += chunk; });
+            req.on('end', () => {
+              try {
+                const incoming = JSON.parse(body || '{}');
+                const cleanEmail = String(incoming.email || '').toLowerCase().trim();
+                const password = String(incoming.password || '');
+                const db = readDb();
+                const found = (db.opsState?.coordinators || []).find(
+                  (c) => (c.email || '').toLowerCase() === cleanEmail && c.password === password
+                );
+                if (found) {
+                  res.setHeader('Content-Type', 'application/json');
+                  res.setHeader('Access-Control-Allow-Origin', '*');
+                  res.end(JSON.stringify({ success: true, coordinator: found }));
+                  return;
+                }
+                if (
+                  (cleanEmail === 'gate.coordinator@codefiesta.in' && password === 'gate_access_cf5') ||
+                  (cleanEmail === 'coordinator@codefiesta.in' && password === 'gate123')
+                ) {
+                  res.setHeader('Content-Type', 'application/json');
+                  res.setHeader('Access-Control-Allow-Origin', '*');
+                  res.end(JSON.stringify({
+                    success: true,
+                    coordinator: {
+                      id: 'coord_default',
+                      name: 'Main Gate Staff',
+                      email: cleanEmail,
+                      gate: 'Sitapura Main Entrance',
+                    },
+                  }));
+                  return;
+                }
+                res.statusCode = 401;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: 'Invalid gate coordinator credentials.' }));
+              } catch (err) {
+                res.statusCode = 400;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: err.message }));
+              }
+            });
+            return;
+          }
+        }
+
+        // POST /api/gate/scan
+        if (req.url === '/api/gate/scan') {
+          if (req.method === 'POST') {
+            let body = '';
+            req.on('data', (chunk) => { body += chunk; });
+            req.on('end', () => {
+              try {
+                const incoming = JSON.parse(body || '{}');
+                const db = readDb();
+                const opsState = db.opsState || {};
+                const input = String(incoming.code || incoming.passId || '').trim();
+                if (!input) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'No QR payload or pass ID provided.' }));
+                  return;
+                }
+
+                let targetEmail = '';
+                let targetTeamId = '';
+                let targetPassId = '';
+
+                if (input.startsWith('CF5:')) {
+                  const parts = input.split(':');
+                  targetTeamId = parts[1] || '';
+                  targetEmail = (parts[2] || '').toLowerCase();
+                  targetPassId = parts[3] || '';
+                } else if (input.includes('@')) {
+                  targetEmail = input.toLowerCase();
+                } else {
+                  targetPassId = input;
+                }
+
+                const allTeams = db.teams || [];
+                let foundTeam = null;
+                let foundMember = null;
+
+                for (const t of allTeams) {
+                  for (const m of t.members || []) {
+                    const pId = `CF5-${(m.id || m.email || '0000').slice(-6).toUpperCase()}`;
+                    if (
+                      (targetEmail && (m.email || '').toLowerCase() === targetEmail) ||
+                      (targetPassId && pId === targetPassId.toUpperCase()) ||
+                      (targetPassId && (m.id || '').endsWith(targetPassId))
+                    ) {
+                      foundTeam = t;
+                      foundMember = m;
+                      break;
+                    }
+                  }
+                  if (foundTeam) break;
+                }
+
+                if (!foundTeam) {
+                  const u = (db.users || []).find(
+                    (usr) =>
+                      (targetEmail && (usr.email || '').toLowerCase() === targetEmail) ||
+                      (targetPassId && `CF5-${(usr.id || '0000').slice(-6).toUpperCase()}` === targetPassId.toUpperCase())
+                  );
+                  if (u) {
+                    foundMember = {
+                      name: `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email.split('@')[0],
+                      email: u.email,
+                      college: u.college || 'Participant',
+                      role: 'leader',
+                      status: 'accepted',
+                    };
+                    foundTeam = allTeams.find((t) => (t.members || []).some((m) => m.email === u.email)) || {
+                      id: 'team_solo_' + u.id,
+                      name: 'SOLO OPERATIVE',
+                      size: 1,
+                      members: [foundMember],
+                      tableNumber: opsState.tableAssignments?.[u.id] || null,
+                    };
+                  }
+                }
+
+                if (!foundTeam || !foundMember) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'QR Code verification failed: No matching registered participant found.' }));
+                  return;
+                }
+
+                opsState.gateCheckins = opsState.gateCheckins || {};
+                opsState.gateCheckins[foundTeam.id] = opsState.gateCheckins[foundTeam.id] || {};
+
+                const checkinTime = new Date().toISOString();
+                opsState.gateCheckins[foundTeam.id][foundMember.email.toLowerCase()] = checkinTime;
+                db.opsState = opsState;
+                writeDb(db);
+
+                const acceptedMembers = (foundTeam.members || []).filter(
+                  (m) => m.status === 'accepted' || m.role === 'leader'
+                );
+                const teamSize = Math.max(acceptedMembers.length, foundTeam.size || 1);
+
+                const roster = acceptedMembers.map((m) => {
+                  const isHere = !!opsState.gateCheckins[foundTeam.id][(m.email || '').toLowerCase()];
+                  return {
+                    ...m,
+                    checkedIn: isHere,
+                    checkedInAt: opsState.gateCheckins[foundTeam.id][(m.email || '').toLowerCase()] || null,
+                  };
+                });
+
+                const checkedInCount = roster.filter((m) => m.checkedIn).length;
+                const isComplete = checkedInCount >= acceptedMembers.length && acceptedMembers.length > 0;
+
+                res.setHeader('Content-Type', 'application/json');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                res.end(JSON.stringify({
+                  success: true,
+                  team: {
+                    id: foundTeam.id,
+                    name: foundTeam.name,
+                    size: teamSize,
+                    tableNumber: opsState.tableAssignments?.[foundTeam.id] || foundTeam.tableNumber || null,
+                    roster,
+                  },
+                  scannedMember: {
+                    name: foundMember.name || (foundMember.email || '').split('@')[0],
+                    email: foundMember.email,
+                    college: foundMember.college,
+                    checkedInAt: checkinTime,
+                  },
+                  checkedInCount,
+                  totalMembers: acceptedMembers.length,
+                  isComplete,
+                }));
+              } catch (err) {
+                res.statusCode = 400;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: err.message }));
+              }
+            });
+            return;
+          }
+        }
+
+        // POST /api/ops/toggle-round
+        if (req.url === '/api/ops/toggle-round') {
+          if (req.method === 'POST') {
+            let body = '';
+            req.on('data', (chunk) => { body += chunk; });
+            req.on('end', () => {
+              try {
+                const incoming = JSON.parse(body || '{}');
+                const db = readDb();
+                const opsState = db.opsState || {};
+                opsState.evaluationRounds = opsState.evaluationRounds || { round1: true, round2: false };
+                if (incoming.round) {
+                  opsState.evaluationRounds[incoming.round] = incoming.enabled !== false;
+                }
+                db.opsState = opsState;
+                writeDb(db);
+                res.setHeader('Content-Type', 'application/json');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                res.end(JSON.stringify({ success: true, evaluationRounds: opsState.evaluationRounds }));
+              } catch (err) {
+                res.statusCode = 400;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: err.message }));
+              }
+            });
+            return;
+          }
         }
 
         next();

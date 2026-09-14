@@ -12,6 +12,52 @@ import Admin from './Admin.jsx'
 import Mentor from './Mentor.jsx'
 import GateCoordinator from './GateCoordinator.jsx'
 
+// Global dynamic auto-expanding textareas across the entire website
+if (typeof window !== 'undefined') {
+  const autoExpand = (el) => {
+    if (!el || el.tagName !== 'TEXTAREA') return
+    el.style.resize = 'none'
+    el.style.boxSizing = 'border-box'
+    el.style.height = 'auto'
+    const newHeight = Math.max(el.scrollHeight, 68)
+    el.style.height = `${newHeight}px`
+  }
+
+  document.addEventListener('input', (e) => {
+    if (e.target && e.target.tagName === 'TEXTAREA') {
+      autoExpand(e.target)
+    }
+  }, { passive: true })
+
+  document.addEventListener('focusin', (e) => {
+    if (e.target && e.target.tagName === 'TEXTAREA') {
+      autoExpand(e.target)
+    }
+  }, { passive: true })
+
+  // Observe dynamically rendered textareas & modals
+  if (typeof MutationObserver !== 'undefined') {
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (node.nodeType === 1) {
+            if (node.tagName === 'TEXTAREA') autoExpand(node)
+            const textareas = node.querySelectorAll ? node.querySelectorAll('textarea') : []
+            textareas.forEach(autoExpand)
+          }
+        }
+      }
+    })
+    if (document.body) {
+      observer.observe(document.body, { childList: true, subtree: true })
+    } else {
+      window.addEventListener('DOMContentLoaded', () => {
+        observer.observe(document.body, { childList: true, subtree: true })
+      })
+    }
+  }
+}
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>

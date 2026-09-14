@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { fetchMe, fetchMyTeams, submitPaymentApi, getAllRegisteredTeams } from './api'
+import { QRCodeSvg } from './qrGenerator.jsx'
 
 const UTR_REGEX = /^\d{12}$/
 
@@ -471,26 +472,80 @@ export default function Payment() {
             </div>
           )}
 
+          {/* Warning Banner */}
+          <div className="p-3 rounded-lg bg-amber-500/15 border border-amber-500/50 text-amber-300 text-xs font-mono mb-4 flex items-start gap-2">
+            <span className="text-base">⚠️</span>
+            <div>
+              <strong className="block text-amber-200 uppercase font-bold">DO NOT CLOSE OR REFRESH THIS TAB</strong>
+              <span className="text-[11px] text-amber-200/90">Do not leave this tab while completing payment in your UPI app. Return here immediately to submit your 12-digit UTR.</span>
+            </div>
+          </div>
+
           {/* Title & amount */}
-          <div className="text-center mb-5">
+          <div className="text-center mb-4">
             <h1 className="font-sans font-bold text-base sm:text-lg text-white">
               PAYMENT
             </h1>
             <p className="text-[9px] sm:text-xs text-slate-400 mt-1.5">
-              Scan the QR to pay the registration fee
+              Scan the QR or use quick UPI links to pay the flat ₹800 fee
             </p>
-            <div className="mt-3 inline-block bg-[#0d0e15] border border-slate-800 px-4 py-1.5 rounded text-sm text-tactical font-bold">
+            <div className="mt-2.5 inline-block bg-[#0d0e15] border border-slate-800 px-4 py-1.5 rounded text-sm text-tactical font-bold">
               ₹800.00
             </div>
           </div>
 
           {/* QR */}
-          <div className="flex flex-col items-center justify-center mb-5">
-            <div className="bg-white p-3 sm:p-4 rounded-md shadow-md border-2 border-slate-300 inline-block">
-              <QrSvg />
+          <div className="flex flex-col items-center justify-center mb-4">
+            <div className="bg-white p-3 rounded-xl shadow-xl border-2 border-tactical inline-block">
+              <QRCodeSvg value="upi://pay?pa=Q073541130@ybl&pn=Codefiesta%205.0&am=800&cu=INR&tn=Codefiesta%205.0%20Registration" size={150} />
             </div>
-            <div className="mt-2 text-[10px] sm:text-[11px] text-slate-400">
-              UPI ID: git.codefiesta@upi
+            <div className="mt-2.5 flex items-center gap-2">
+              <span className="text-xs font-mono font-bold text-white bg-[#131726] px-2.5 py-1 rounded border border-slate-700 select-all">
+                Q073541130@ybl
+              </span>
+              <button
+                type="button"
+                onClick={async () => {
+                  await navigator.clipboard.writeText('Q073541130@ybl').catch(() => {})
+                  alert('UPI ID copied: Q073541130@ybl')
+                }}
+                className="px-2 py-1 rounded bg-[#1e2338] hover:bg-tactical hover:text-black text-slate-300 text-[10px] font-mono transition"
+              >
+                📋 COPY
+              </button>
+            </div>
+          </div>
+
+          {/* Mobile UPI Buttons */}
+          <div className="space-y-1.5 mb-4">
+            <div className="text-[10px] font-mono text-slate-400 uppercase tracking-wider text-center">
+              ⚡ Quick Pay via UPI App (Click to open)
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <a
+                href="tez://upi/pay?pa=Q073541130@ybl&pn=Codefiesta%205.0&am=800&cu=INR&tn=Codefiesta%205.0%20Registration"
+                className="p-2 rounded bg-[#121626] hover:bg-[#1a2038] border border-blue-500/40 text-blue-300 text-[11px] font-mono font-bold text-center flex items-center justify-center gap-1 transition active:scale-95"
+              >
+                <span>🔵</span> GPay
+              </a>
+              <a
+                href="phonepe://pay?pa=Q073541130@ybl&pn=Codefiesta%205.0&am=800&cu=INR&tn=Codefiesta%205.0%20Registration"
+                className="p-2 rounded bg-[#121626] hover:bg-[#1a2038] border border-purple-500/40 text-purple-300 text-[11px] font-mono font-bold text-center flex items-center justify-center gap-1 transition active:scale-95"
+              >
+                <span>🟣</span> PhonePe
+              </a>
+              <a
+                href="paytmmp://pay?pa=Q073541130@ybl&pn=Codefiesta%205.0&am=800&cu=INR&tn=Codefiesta%205.0%20Registration"
+                className="p-2 rounded bg-[#121626] hover:bg-[#1a2038] border border-cyan-500/40 text-cyan-300 text-[11px] font-mono font-bold text-center flex items-center justify-center gap-1 transition active:scale-95"
+              >
+                <span>🔷</span> Paytm
+              </a>
+              <a
+                href="upi://pay?pa=Q073541130@ybl&pn=Codefiesta%205.0&am=800&cu=INR&tn=Codefiesta%205.0%20Registration"
+                className="p-2 rounded bg-[#121626] hover:bg-[#1a2038] border border-tactical/50 text-tactical text-[11px] font-mono font-bold text-center flex items-center justify-center gap-1 transition active:scale-95"
+              >
+                <span>⚡</span> Any UPI
+              </a>
             </div>
           </div>
 

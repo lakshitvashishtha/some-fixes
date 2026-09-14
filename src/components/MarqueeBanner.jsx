@@ -28,9 +28,6 @@ export default function MarqueeBanner() {
           animation: marquee-scroll 28s linear infinite;
           will-change: transform;
         }
-        .marquee-track:hover {
-          animation-play-state: paused;
-        }
       `}</style>
 
       <div

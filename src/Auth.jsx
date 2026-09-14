@@ -1,10 +1,21 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import Dropdown from './Dropdown'
 import { QRCodeSvg } from './qrGenerator.jsx'
+import satelliteImg from './assets/satellite.png'
+import {
+  ShieldCheck,
+  Rocket,
+  Users,
+  CreditCard,
+  CheckCircle2,
+  Sparkles,
+  ArrowRight,
+  Mail,
+  Lock,
+  Info,
+} from 'lucide-react'
 import {
   registerUser,
-  loginUser,
   logoutUser,
   fetchMe,
   fetchMyTeams,
@@ -14,21 +25,24 @@ import {
   createTeamApi,
   joinWithPartyCodeApi,
   isEmailRegisteredAnywhere,
-  requestPasswordResetApi,
+  sendOtpApi,
+  verifyOtpApi,
 } from './api'
 
-const YEAR_OPTIONS = ['1st', '2nd', '3rd', '4th']
-const GENDER_OPTIONS = ['male', 'female']
 // Indian mobile number: starts with 6-9, exactly 10 digits
 const PHONE_REGEX = /^[6-9]\d{9}$/
 // Basic email format check
 const EMAIL_REGEX = /^\S+@\S+\.\S+$/
 
+const OFFICIAL_UPI_ID = 'Q073541130@ybl'
+const SQUAD_FEE = 800
+const UNIVERSAL_UPI_URI = `upi://pay?pa=${OFFICIAL_UPI_ID}&pn=Codefiesta%205.0&am=${SQUAD_FEE}&cu=INR&tn=Codefiesta%205.0%20Registration`
+
 const inputClass =
-  'w-full rounded-md bg-[#090b12] border border-slate-700/80 px-3 py-2 sm:py-2.5 text-[11px] sm:text-sm text-white outline-none placeholder:text-slate-500 focus:border-tactical transition-colors font-mono'
+  'w-full rounded-xl bg-[#090d18] border border-slate-700/80 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 transition-all font-sans'
 
 const labelClass =
-  'block text-[8px] sm:text-[10px] text-slate-400 uppercase tracking-wider font-mono font-semibold'
+  'block text-xs text-slate-300 font-semibold mb-1.5 uppercase tracking-wider font-sans'
 
 async function copyText(text) {
   try {
@@ -62,25 +76,40 @@ function HudBracket({ pos }) {
 }
 
 function StepDots({ step, total = 3 }) {
+  const stepTitles = ['Leader Email', 'Squad Roster', 'Flat ₹800 Payment']
   return (
-    <div
-      aria-label={`Step ${step} of ${total}`}
-      className="flex items-center justify-center gap-1.5 pt-1 select-none"
-    >
-      {Array.from({ length: total }, (_, i) => i + 1).map((n) => {
-        const active = n === step
-        return active ? (
-          <span
-            key={n}
-            className="w-7 h-1.5 bg-tactical rounded-sm border border-[#b28200]"
-          />
-        ) : (
-          <span
-            key={n}
-            className="w-1.5 h-1.5 bg-[#232838] rounded-sm border border-[#2b3149]"
-          />
-        )
-      })}
+    <div className="pt-3 pb-1 select-none">
+      <div className="flex items-center justify-center gap-2">
+        {Array.from({ length: total }, (_, i) => i + 1).map((n) => {
+          const active = n === step
+          const done = n < step
+          return (
+            <div key={n} className="flex items-center gap-2">
+              <div
+                className={`flex items-center justify-center rounded-full text-xs font-bold transition-all ${
+                  active
+                    ? 'w-7 h-7 bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-[0_0_15px_rgba(251,191,36,0.6)] ring-2 ring-amber-400/30 font-sans'
+                    : done
+                    ? 'w-6 h-6 bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 font-sans'
+                    : 'w-6 h-6 bg-slate-900 text-slate-500 border border-slate-800 font-sans'
+                }`}
+              >
+                {done ? '✓' : n}
+              </div>
+              {n < total && (
+                <div
+                  className={`w-8 sm:w-12 h-0.5 rounded transition-all ${
+                    done ? 'bg-emerald-500/60' : 'bg-slate-800'
+                  }`}
+                />
+              )}
+            </div>
+          )
+        })}
+      </div>
+      <div className="text-center text-[11px] sm:text-xs text-slate-400 mt-2 font-sans">
+        Step {step} of {total}: <span className="text-amber-400 font-semibold">{stepTitles[step - 1] || ''}</span>
+      </div>
     </div>
   )
 }
@@ -89,15 +118,18 @@ function TactileButton({ children, className = '', ...props }) {
   return (
     <button
       type="submit"
-      className={`btn-ribbed bg-tactical hover:bg-[#e6a600] active:translate-y-0.5 text-black font-mono font-bold text-xs sm:text-sm tracking-wider uppercase rounded-md px-4 py-2.5 sm:py-3.5 border-b-4 border-[#b28200] transition-all duration-100 flex items-center justify-center shadow-lg disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
+      className={`group relative overflow-hidden bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-400 hover:from-amber-300 hover:via-amber-400 hover:to-yellow-300 active:scale-[0.99] text-slate-950 font-sans font-bold text-xs sm:text-sm tracking-wider uppercase rounded-xl px-5 py-3 sm:py-3.5 border-b-2 border-amber-600 transition-all duration-150 flex items-center justify-center shadow-[0_4px_16px_rgba(245,158,11,0.3)] hover:shadow-[0_6px_24px_rgba(245,158,11,0.45)] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer ${className}`}
       {...props}
     >
-      {children}
+      <span className="relative z-10 flex items-center justify-center gap-2">
+        {children}
+      </span>
+      <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700 bg-gradient-to-r from-transparent via-white/25 to-transparent pointer-events-none" />
     </button>
   )
 }
 
-function Auth() {
+export default function Auth() {
   const location = useLocation()
   const navigate = useNavigate()
   const [step, setStep] = useState(() => (location.pathname === '/login' ? 'login' : 1))
@@ -105,7 +137,7 @@ function Auth() {
   useEffect(() => {
     if (location.pathname === '/login') {
       setStep('login')
-    } else if (location.pathname === '/register') {
+    } else if (location.pathname === '/register' && step === 'login') {
       setStep(1)
     }
   }, [location.pathname])
@@ -115,11 +147,53 @@ function Auth() {
   const [userTeam, setUserTeam] = useState(null)
   const [checkingSession, setCheckingSession] = useState(true)
 
-  // Login tabs: 'credentials' | 'partyCode'
-  const [loginTab, setLoginTab] = useState('credentials')
+  // Login tabs: 'otp' | 'partyCode'
+  const [loginTab, setLoginTab] = useState('otp')
   const [partyCode, setPartyCode] = useState('')
   const [partyCodeError, setPartyCodeError] = useState('')
 
+  // OTP Login State (Passwordless via support@protechy.in)
+  const [loginEmail, setLoginEmail] = useState('')
+  const [loginOtp, setLoginOtp] = useState('')
+  const [otpDispatched, setOtpDispatched] = useState(false)
+  const [otpLoading, setOtpLoading] = useState(false)
+  const [otpMsg, setOtpMsg] = useState('')
+  const [otpError, setOtpError] = useState('')
+  const [attemptsLeft, setAttemptsLeft] = useState(5)
+
+  // Step 1: Leader Email
+  const [email, setEmail] = useState('')
+  const [emailError, setEmailError] = useState('')
+  const [checkingEmail, setCheckingEmail] = useState(false)
+
+  // Step 2: Squad Configuration
+  const [squadName, setSquadName] = useState('')
+  const [squadSize, setSquadSize] = useState(4)
+  const [college, setCollege] = useState('')
+  const [squadNameStatus, setSquadNameStatus] = useState('idle') // 'idle' | 'checking' | 'available' | 'taken'
+  const [squadNameError, setSquadNameError] = useState('')
+
+  // Step 2: Leader Profile (No gender, roll number, or course)
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [phoneError, setPhoneError] = useState('')
+
+  // Step 2: Teammates (Shared college, no gender/roll/course)
+  const [teammates, setTeammates] = useState([
+    { firstName: '', lastName: '', email: '', phone: '' },
+    { firstName: '', lastName: '', email: '', phone: '' },
+    { firstName: '', lastName: '', email: '', phone: '' },
+  ])
+
+  // Step 3: Payment
+  const [utr, setUtr] = useState('')
+  const [utrError, setUtrError] = useState('')
+  const [copiedUpi, setCopiedUpi] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [serverError, setServerError] = useState('')
+
+  // Check active session
   useEffect(() => {
     fetchMe()
       .then(async (data) => {
@@ -132,7 +206,7 @@ function Auth() {
               setUserTeam(list[0])
             }
           } catch {
-            // Non-blocking team lookup
+            // Non-blocking
           }
         } else {
           setCurrentUser(null)
@@ -146,54 +220,75 @@ function Auth() {
       .finally(() => setCheckingSession(false))
   }, [])
 
-  const [showPassword, setShowPassword] = useState(false)
-  const [phoneError, setPhoneError] = useState('')
-  const [serverError, setServerError] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [checkingEmail, setCheckingEmail] = useState(false)
-  const [emailError, setEmailError] = useState('')
+  // Restore draft on mount so mobile app switches never lose form state
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('cf_reg_draft')
+      if (raw) {
+        const d = JSON.parse(raw)
+        if (d.email) setEmail(d.email)
+        if (d.squadName) setSquadName(d.squadName)
+        if (d.squadSize) setSquadSize(Number(d.squadSize) || 4)
+        if (d.college) setCollege(d.college)
+        if (d.firstName) setFirstName(d.firstName)
+        if (d.lastName) setLastName(d.lastName)
+        if (d.phone) setPhone(d.phone)
+        if (Array.isArray(d.teammates) && d.teammates.length > 0) {
+          setTeammates((prev) =>
+            prev.map((t, idx) => ({ ...t, ...(d.teammates[idx] || {}) }))
+          )
+        }
+        if (d.utr) setUtr(d.utr)
+        if (d.step && location.pathname !== '/login' && d.step > 1) {
+          setStep(d.step)
+        }
+      }
+    } catch {}
+  }, [location.pathname])
 
-  // Login-only state
-  const [loginEmail, setLoginEmail] = useState('')
-  const [loginPassword, setLoginPassword] = useState('')
-  const [loginError, setLoginError] = useState('')
+  // Persist form state to localStorage on changes (so mobile switching never loses progress)
+  useEffect(() => {
+    if (step === 'login') return
+    try {
+      const draft = {
+        email,
+        squadName,
+        squadSize,
+        college,
+        firstName,
+        lastName,
+        phone,
+        teammates,
+        utr,
+        step,
+      }
+      localStorage.setItem('cf_reg_draft', JSON.stringify(draft))
+    } catch {}
+  }, [email, squadName, squadSize, college, firstName, lastName, phone, teammates, utr, step])
 
-  // Forgot Password modal state
-  const [showForgotModal, setShowForgotModal] = useState(false)
-  const [forgotEmail, setForgotEmail] = useState('')
-  const [forgotSubmitted, setForgotSubmitted] = useState(false)
-  const [forgotLoading, setForgotLoading] = useState(false)
-  const [forgotMsg, setForgotMsg] = useState('')
+  // Real-time Squad Name Uniqueness Check (ensures uniqueness before proceeding)
+  useEffect(() => {
+    const trimmed = squadName.trim()
+    if (!trimmed || trimmed.length < 3) {
+      setSquadNameStatus('idle')
+      setSquadNameError('')
+      return
+    }
 
-  // Step 1: Account credentials
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+    const timer = setTimeout(async () => {
+      setSquadNameStatus('checking')
+      setSquadNameError('')
+      try {
+        await checkSquadNameApi(trimmed)
+        setSquadNameStatus('available')
+      } catch (err) {
+        setSquadNameStatus('taken')
+        setSquadNameError(err.message || `Squad name "${trimmed}" is already taken. Please choose a unique name.`)
+      }
+    }, 350)
 
-  // Step 2: Squad Configuration (Default: 4 members)
-  const [squadName, setSquadName] = useState('')
-  const [squadSize, setSquadSize] = useState(4)
-
-  // Step 2: Leader Profile (You)
-  const [firstName, setFirstName] = useState('')
-  const [lastName, setLastName] = useState('')
-  const [phone, setPhone] = useState('')
-  const [college, setCollege] = useState('')
-  const [rollNumber, setRollNumber] = useState('')
-  const [course, setCourse] = useState('')
-  const [year, setYear] = useState('')
-  const [gender, setGender] = useState('')
-
-  // Step 2: Teammates (up to 3 teammates for max 4-person squad)
-  const [teammates, setTeammates] = useState([
-    { firstName: '', lastName: '', email: '', phone: '', college: '', rollNumber: '', course: '', year: '', gender: '' },
-    { firstName: '', lastName: '', email: '', phone: '', college: '', rollNumber: '', course: '', year: '', gender: '' },
-    { firstName: '', lastName: '', email: '', phone: '', college: '', rollNumber: '', course: '', year: '', gender: '' },
-  ])
-
-  // Step 3: Payment
-  const [utr, setUtr] = useState('')
-  const [utrError, setUtrError] = useState('')
-  const [copiedUpi, setCopiedUpi] = useState(false)
+    return () => clearTimeout(timer)
+  }, [squadName])
 
   const updateTeammate = (index, field, val) => {
     setTeammates((prev) => {
@@ -204,35 +299,48 @@ function Auth() {
     setServerError('')
   }
 
-  // Step 1: Verify Email
+  // Step 1: Verify Email (Passwordless - read only, 0 database writes)
   const handleStep1Next = async (e) => {
     e.preventDefault()
     setEmailError('')
     setServerError('')
-    if (!EMAIL_REGEX.test(email) || !password) return
+    const cleanEmail = email.trim().toLowerCase()
+    if (!EMAIL_REGEX.test(cleanEmail)) {
+      setEmailError('Please enter a valid email address.')
+      return
+    }
 
     setCheckingEmail(true)
     try {
-      await checkEmailApi(email)
+      const res = await checkEmailApi(cleanEmail)
+      if (res?.exists) {
+        setEmailError(`Email "${cleanEmail}" is already registered. Please log in instead.`)
+        return
+      }
       setStep(2)
     } catch (err) {
-      setEmailError(err.message)
+      setEmailError(err.message || 'Email verification error')
     } finally {
       setCheckingEmail(false)
     }
   }
 
-  // Step 2: Verify Squad & All Candidate Details
+  // Step 2: Verify Squad & Profiles (No gender/roll/course, common college - read only, 0 server writes)
   const handleStep2Next = async (e) => {
     if (e) e.preventDefault()
     setServerError('')
     setPhoneError('')
 
-    // Squad Name
     if (!squadName.trim()) {
       setServerError('Squad name is required.')
       return
     }
+
+    if (squadNameStatus === 'taken' || squadNameError) {
+      setServerError(squadNameError || 'Squad name is already taken. Please choose a unique name.')
+      return
+    }
+
     try {
       await checkSquadNameApi(squadName.trim())
     } catch (err) {
@@ -243,10 +351,8 @@ function Auth() {
         )
         if (
           existing &&
-          (
-            (currentUser && (existing.leaderEmail?.toLowerCase() === currentUser.email?.toLowerCase() || existing.leader?.email?.toLowerCase() === currentUser.email?.toLowerCase())) ||
-            (email && (existing.leaderEmail?.toLowerCase() === email.trim().toLowerCase() || existing.leader?.email?.toLowerCase() === email.trim().toLowerCase()))
-          )
+          (existing.leaderEmail?.toLowerCase() === email.trim().toLowerCase() ||
+            existing.leader?.email?.toLowerCase() === email.trim().toLowerCase())
         ) {
           setServerError(`You have already registered squad "${existing.name}". Please log in to view your Squad Dashboard or Payment page.`)
           return
@@ -257,9 +363,8 @@ function Auth() {
     }
 
     // Leader Details
-    const leaderAlreadyRegistered = isEmailRegisteredAnywhere(email)
-    if (leaderAlreadyRegistered) {
-      setServerError(`Leader email "${email}" is already registered. If this is your squad, please log in with this email to access your squad dashboard.`)
+    if (isEmailRegisteredAnywhere(email.trim().toLowerCase())) {
+      setServerError(`Leader email "${email}" is already registered. If this is your squad, please log in with your email to access your dashboard.`)
       return
     }
 
@@ -273,31 +378,15 @@ function Auth() {
     }
     if (!PHONE_REGEX.test(phone)) {
       setPhoneError('Enter a valid 10-digit Indian mobile number')
-      setServerError('Please enter a valid 10-digit mobile number for leader.')
+      setServerError('Please enter a valid 10-digit mobile number for the leader.')
       return
     }
     if (!college.trim()) {
-      setServerError('Please enter your college / university name.')
-      return
-    }
-    if (!rollNumber.trim()) {
-      setServerError('Leader College ID / Roll Number is required.')
-      return
-    }
-    if (!course.trim()) {
-      setServerError('Leader Course / Branch is required (e.g. CSE, AI&DS).')
-      return
-    }
-    if (!year.trim()) {
-      setServerError('Please select leader academic year.')
-      return
-    }
-    if (!gender.trim()) {
-      setServerError('Please select leader gender.')
+      setServerError('Please enter your college / university name (shared by all squad members).')
       return
     }
 
-    // Needed Teammates
+    // Teammates check
     const needed = squadSize - 1
     const seenEmails = new Set([email.toLowerCase().trim()])
 
@@ -324,10 +413,8 @@ function Auth() {
       }
       seenEmails.add(tmEmail)
 
-      // Uniqueness check across system
-      const alreadyRegistered = isEmailRegisteredAnywhere(tmEmail)
-      if (alreadyRegistered) {
-        setServerError(`Email "${tmEmail}" is already registered with another account or squad. One email = one registration only.`)
+      if (isEmailRegisteredAnywhere(tmEmail)) {
+        setServerError(`Email "${tmEmail}" is already registered with another account or squad. Each participant can belong to only one squad.`)
         return
       }
 
@@ -335,33 +422,13 @@ function Auth() {
         setServerError(`Teammate #${memberNum} requires a valid 10-digit Indian mobile number.`)
         return
       }
-      if (!tm.college.trim() && !college.trim()) {
-        setServerError(`Teammate #${memberNum} college name is required.`)
-        return
-      }
-      if (!tm.rollNumber.trim()) {
-        setServerError(`Teammate #${memberNum} Roll Number / College ID is required.`)
-        return
-      }
-      if (!tm.course.trim()) {
-        setServerError(`Teammate #${memberNum} Course is required.`)
-        return
-      }
-      if (!tm.year.trim()) {
-        setServerError(`Teammate #${memberNum} Academic Year is required.`)
-        return
-      }
-      if (!tm.gender.trim()) {
-        setServerError(`Teammate #${memberNum} Sex is required.`)
-        return
-      }
     }
 
-    // All profiles valid — advance to Step 3 (Payment)
+    // All profiles validated — proceed to Step 3 (Payment). Do NOT save to DB yet!
     setStep(3)
   }
 
-  // Step 3: Final Payment Submission
+  // Step 3: Final Payment Submission (Only saves to DB upon UTR entry)
   const handleStep3Submit = async (e) => {
     e.preventDefault()
     setUtrError('')
@@ -375,21 +442,9 @@ function Auth() {
 
     setSubmitting(true)
     try {
-      // 1. Register leader account credentials & profile
-      await registerUser({
-        email: email.trim().toLowerCase(),
-        password,
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        phone: phone.trim(),
-        college: college.trim(),
-        rollNumber: rollNumber.trim(),
-        course: course.trim(),
-        year: year.trim(),
-        gender: gender.trim(),
-      })
+      const leaderEmail = email.trim().toLowerCase()
 
-      // 2. Prepare teammate payload
+      // 1. Prepare Teammates (common college, status: accepted)
       const needed = squadSize - 1
       const activeTeammates = teammates.slice(0, needed).map((tm) => ({
         firstName: tm.firstName.trim(),
@@ -397,39 +452,68 @@ function Auth() {
         name: `${tm.firstName.trim()} ${tm.lastName.trim()}`,
         email: tm.email.trim().toLowerCase(),
         phone: tm.phone.trim(),
-        college: (tm.college || college).trim(),
-        rollNumber: tm.rollNumber.trim(),
-        course: tm.course.trim(),
-        year: tm.year.trim(),
-        gender: tm.gender.trim(),
+        college: college.trim(),
+        role: 'member',
+        status: 'accepted',
       }))
 
-      // 3. Register Squad with Payment details
-      await createTeamApi({
+      // 2. Commit Squad & Leader to Database atomically with status: pending_verification
+      // Zero server writes occur if the user dropped midway before this submission.
+      const res = await createTeamApi({
         name: squadName.trim(),
         size: squadSize,
+        college: college.trim(),
+        status: 'pending_verification',
         leader: {
-          email: email.trim().toLowerCase(),
+          email: leaderEmail,
           firstName: firstName.trim(),
           lastName: lastName.trim(),
           name: `${firstName.trim()} ${lastName.trim()}`,
           phone: phone.trim(),
           college: college.trim(),
-          rollNumber: rollNumber.trim(),
-          course: course.trim(),
-          year: year.trim(),
-          gender: gender.trim(),
+          role: 'leader',
+          status: 'accepted',
         },
         members: activeTeammates,
         payment: {
           utr: cleanUtr,
-          amount: 800,
+          amount: SQUAD_FEE,
           status: 'submitted',
+          submittedAt: new Date().toISOString(),
         },
       })
 
-      // Navigate to Dashboard (which will display VerificationPendingScreen until admin confirms)
-      navigate('/dashboard')
+      // 3. Immediately establish authenticated session for the candidate
+      const leaderUser = res?.user || {
+        id: res?.team?.leader?.id || ('usr_' + (res?.team?.id || Math.random().toString(36).slice(2, 9))),
+        email: leaderEmail,
+        name: `${firstName.trim()} ${lastName.trim()}`,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        phone: phone.trim(),
+        college: college.trim(),
+        role: 'leader',
+        isLeader: true,
+      }
+
+      try {
+        localStorage.setItem('cf_auth_user', JSON.stringify(leaderUser))
+        localStorage.setItem('cf_user', JSON.stringify(leaderUser))
+        localStorage.removeItem('cf_logged_out')
+        localStorage.removeItem('cf_reg_draft')
+        if (res?.team) {
+          localStorage.setItem(`cf_user_teams_${leaderEmail}`, JSON.stringify([res.team]))
+        }
+      } catch {}
+
+      // 4. Dispatch storage & teams updated event for immediate sync
+      if (typeof window !== 'undefined' && window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('codefiesta_teams_updated'))
+        window.dispatchEvent(new Event('storage'))
+      }
+
+      // 5. Navigate directly to Dashboard (displays VerificationPendingScreen)
+      navigate('/dashboard', { replace: true })
     } catch (err) {
       setServerError(err.message || 'Registration failed. Please check inputs.')
     } finally {
@@ -437,31 +521,56 @@ function Auth() {
     }
   }
 
-  // Login handler
-  const handleLogin = async (e) => {
+  // Passwordless Login: Dispatch OTP from support@protechy.in
+  const handleSendOtp = async (e) => {
     e.preventDefault()
-    setLoginError('')
-
-    if (!EMAIL_REGEX.test(loginEmail)) {
-      setLoginError('Enter a valid email address')
+    setOtpError('')
+    setOtpMsg('')
+    const cleanEmail = loginEmail.trim().toLowerCase()
+    if (!EMAIL_REGEX.test(cleanEmail)) {
+      setOtpError('Please enter a valid email address.')
       return
     }
-    if (!loginPassword) {
-      setLoginError('Enter your password')
+
+    setOtpLoading(true)
+    try {
+      const res = await sendOtpApi(cleanEmail)
+      if (res && res.delivered === false) {
+        throw new Error(res.error || `Unable to send OTP email to ${cleanEmail}. Please check your connection or try again.`)
+      }
+      setOtpDispatched(true)
+      setOtpMsg(res.message || `Login OTP dispatched from support@protechy.in to ${cleanEmail}.`)
+      if (res.attemptsLeft !== undefined) setAttemptsLeft(res.attemptsLeft)
+    } catch (err) {
+      setOtpError(err.message || 'Failed to dispatch OTP.')
+    } finally {
+      setOtpLoading(false)
+    }
+  }
+
+  // Passwordless Login: Verify 6-digit OTP
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault()
+    setOtpError('')
+    const cleanEmail = loginEmail.trim().toLowerCase()
+    const cleanOtp = loginOtp.trim()
+    if (!cleanOtp || cleanOtp.length < 6) {
+      setOtpError('Please enter the 6-digit OTP received on your email.')
       return
     }
 
     setSubmitting(true)
     try {
-      await loginUser({ email: loginEmail.trim(), password: loginPassword })
+      await verifyOtpApi(cleanEmail, cleanOtp)
       navigate('/dashboard')
     } catch (err) {
-      setLoginError(err.message)
+      setOtpError(err.message || 'Invalid or expired OTP.')
     } finally {
       setSubmitting(false)
     }
   }
 
+  // Teammate Party Code Join
   const handlePartyCodeJoin = async (e) => {
     e.preventDefault()
     setPartyCodeError('')
@@ -486,15 +595,17 @@ function Auth() {
 
   const clearLogin = () => {
     setLoginEmail('')
-    setLoginPassword('')
-    setLoginError('')
+    setLoginOtp('')
+    setOtpDispatched(false)
+    setOtpMsg('')
+    setOtpError('')
     setPartyCode('')
     setPartyCodeError('')
     setStep(1)
   }
 
   const handleCopyUpi = async () => {
-    const ok = await copyText('git.codefiesta@upi')
+    const ok = await copyText(OFFICIAL_UPI_ID)
     if (ok) {
       setCopiedUpi(true)
       setTimeout(() => setCopiedUpi(false), 2500)
@@ -510,48 +621,133 @@ function Auth() {
           ? 'REGISTRATION PAYMENT & UTR'
           : loginTab === 'partyCode'
             ? 'JOIN SQUAD WITH PARTY CODE'
-            : 'WELCOME BACK'
+            : 'PASSWORDLESS LOGIN'
 
   const sub =
     step === 1
-      ? 'Step 1 of 3 — Create leader account credentials'
+      ? 'Step 1 of 3 — Enter leader email to begin registration'
       : step === 2
-        ? 'Step 2 of 3 — Complete leader details & all teammate profiles'
+        ? 'Step 2 of 3 — Complete squad details & teammate profiles'
         : step === 3
           ? 'Step 3 of 3 — Scan QR, pay ₹800 squad fee & enter 12-digit UTR'
           : loginTab === 'partyCode'
-            ? 'Enter the party code provided by your leader — no password required'
-            : 'Sign in to access your squad dashboard & evaluations'
-
-  const toggleBtnClass =
-    'absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded bg-[#171924] hover:bg-[#1e2233] border border-slate-700 text-tactical text-[9px] sm:text-[10px] uppercase tracking-wider font-mono'
-
-  const upiPaymentUri = `upi://pay?pa=git.codefiesta@upi&pn=Codefiesta%205.0&am=800&cu=INR&tn=Codefiesta%20Registration`
+            ? 'Enter party code provided by your leader — no password required'
+            : 'Sign in with your email & 6-digit OTP dispatched from support@protechy.in'
 
   return (
-    <div className="auth-page min-h-dvh w-full bg-[#07080e] text-slate-200 font-mono overflow-y-auto">
+    <div className="auth-page min-h-dvh w-full bg-[#07080e] text-slate-200 font-sans overflow-y-auto selection:bg-amber-400 selection:text-slate-950">
       <main className="min-h-dvh w-full flex flex-col lg:flex-row">
         {/* Left visual — desktop only */}
-        <section className="hidden lg:flex w-5/12 min-h-dvh bg-[#0a0b12] items-center justify-center relative overflow-hidden blueprint-grid p-8 sticky top-0 h-screen">
+        <section className="hidden lg:flex w-5/12 min-h-dvh bg-[#070912] items-center justify-center relative overflow-hidden blueprint-grid p-8 sticky top-0 h-screen">
           <HudBracket pos="tl" />
           <HudBracket pos="tr" />
           <HudBracket pos="bl" />
           <HudBracket pos="br" />
-          <div className="w-full max-w-[420px] aspect-square flex items-center justify-center">
-            <div className="w-full h-full rounded-lg border border-slate-800 bg-[#080910] p-2 shadow-2xl flex flex-col items-center justify-center overflow-hidden text-center space-y-4">
-              <img
-                alt="Codefiesta probe blueprint"
-                className="w-4/5 h-4/5 object-contain [filter:contrast(1.1)] select-none"
-                src="https://lh3.googleusercontent.com/aida/AEtjO1UE1fUyFyVVXW_3EZkQJZjGkfM2RHA9hh1STykyWjUv-gLhozbcLCjv_oFkcwhw1euMP-flfnx1q1NQ-ZcIUNbh30waJiDlg-ICxVGBXrSZ58e5p9jus1tHKcP6RPNXSRx4-lNnBRYkA1ksXmr-sY4I43ZlifJE4NIss3LiI5-K8N7CkU_aXDIjVMgM4kqu4-s5f6L-i6mcesl2LnQo7vEgKcIVPmr50VcpxwlGSzdYw1t-W25piyJcOBQt"
-              />
-              <div className="px-4 pb-2">
-                <div className="text-tactical font-bold text-xs tracking-wider">
-                  CODEFIESTA 5.0 GATEWAY
+          <div className="w-full max-w-[460px] flex flex-col items-center justify-center">
+            <div className="w-full rounded-2xl border border-slate-800/90 bg-[#090d18]/90 backdrop-blur-xl p-6 shadow-2xl shadow-black/80 flex flex-col items-center justify-center overflow-hidden text-center relative group">
+              
+              {/* Top Bar: Official Badge & Sector */}
+              <div className="w-full flex items-center justify-between pb-3 border-b border-slate-800/80 mb-4">
+                <div className="flex items-center gap-2.5">
+                  <img
+                    src="/codefiesta-logo.png"
+                    alt="Codefiesta 5.0"
+                    className="w-8 h-8 rounded-full shadow-[0_0_12px_rgba(236,72,153,0.35)]"
+                  />
+                  <div className="text-left">
+                    <div className="text-xs font-bold text-white tracking-widest uppercase font-sans">
+                      CODEFIESTA <span className="text-amber-400">5.0</span>
+                    </div>
+                    <div className="text-[9px] text-slate-400 font-mono">
+                      NATIONAL HACKATHON
+                    </div>
+                  </div>
                 </div>
-                <div className="text-[10px] text-slate-500 mt-0.5">
-                  Leader Login → Team Details → Payment Scanner → UTR Verify
+                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-mono font-semibold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  ORBITAL SYNC
                 </div>
               </div>
+
+              {/* Satellite Showcase Container */}
+              <div className="relative w-full aspect-[4/3] rounded-xl bg-gradient-to-b from-[#0e1428] to-[#060812] border border-slate-800/80 flex items-center justify-center overflow-hidden p-4 shadow-inner">
+                {/* Radial Glow Halo */}
+                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_rgba(245,158,11,0.15),_transparent_70%)] pointer-events-none" />
+                
+                {/* Subtle HUD crosshairs */}
+                <div className="absolute inset-x-0 top-1/2 h-[1px] bg-cyan-500/10 pointer-events-none" />
+                <div className="absolute inset-y-0 left-1/2 w-[1px] bg-cyan-500/10 pointer-events-none" />
+                
+                {/* Floating Satellite Image */}
+                <img
+                  src={satelliteImg}
+                  alt="Codefiesta 5.0 Orbital Satellite Probe"
+                  className="w-full h-full object-contain select-none animate-float-slow drop-shadow-[0_15px_30px_rgba(0,0,0,0.9)] filter brightness-105"
+                />
+
+                {/* Telemetry Corner Badges */}
+                <div className="absolute top-2.5 left-3 text-[9px] font-mono text-cyan-400/90 bg-black/60 px-2 py-0.5 rounded border border-cyan-500/20 backdrop-blur-sm">
+                  🛰️ PROBE: CF-SAT-05
+                </div>
+                <div className="absolute top-2.5 right-3 text-[9px] font-mono text-amber-400/90 bg-black/60 px-2 py-0.5 rounded border border-amber-500/20 backdrop-blur-sm">
+                  1420.405 MHz
+                </div>
+                <div className="absolute bottom-2.5 left-3 text-[9px] font-mono text-slate-400 bg-black/60 px-2 py-0.5 rounded border border-slate-700/40 backdrop-blur-sm">
+                  SECTOR: JAIPUR (GIT)
+                </div>
+                <div className="absolute bottom-2.5 right-3 text-[9px] font-mono text-emerald-400 bg-black/60 px-2 py-0.5 rounded border border-emerald-500/20 backdrop-blur-sm">
+                  GATEWAY: ONLINE
+                </div>
+              </div>
+
+              {/* Registration Flow Roadmap */}
+              <div className="w-full pt-4 space-y-3">
+                <div className="text-xs font-bold text-slate-200 tracking-wider uppercase font-sans flex items-center justify-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-amber-400" />
+                  <span>CANDIDATE ONBOARDING PROTOCOL</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-left">
+                  <div className="p-2.5 rounded-lg bg-[#0d1222] border border-slate-800/80">
+                    <div className="text-[10px] text-amber-400 font-mono font-bold flex items-center gap-1">
+                      <span>01.</span> LEADER EMAIL
+                    </div>
+                    <div className="text-[11px] text-slate-300 font-sans mt-0.5">
+                      Zero password. Instant OTP login.
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-[#0d1222] border border-slate-800/80">
+                    <div className="text-[10px] text-cyan-400 font-mono font-bold flex items-center gap-1">
+                      <span>02.</span> SQUAD ROSTER
+                    </div>
+                    <div className="text-[11px] text-slate-300 font-sans mt-0.5">
+                      2–4 members · Common college.
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-[#0d1222] border border-slate-800/80">
+                    <div className="text-[10px] text-emerald-400 font-mono font-bold flex items-center gap-1">
+                      <span>03.</span> FLAT ₹800 UPI
+                    </div>
+                    <div className="text-[11px] text-slate-300 font-sans mt-0.5">
+                      Quick app links & UTR verify.
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-[#0d1222] border border-slate-800/80">
+                    <div className="text-[10px] text-purple-400 font-mono font-bold flex items-center gap-1">
+                      <span>04.</span> LIVE DASHBOARD
+                    </div>
+                    <div className="text-[11px] text-slate-300 font-sans mt-0.5">
+                      Admin verified squad access.
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer Assurance */}
+                <div className="text-[10px] text-slate-400 font-sans pt-1 flex items-center justify-center gap-1.5 border-t border-slate-800/60">
+                  <span className="text-emerald-400">✓</span> Automated OTP dispatched via <strong className="text-slate-200">support@protechy.in</strong>
+                </div>
+              </div>
+
             </div>
           </div>
         </section>
@@ -576,7 +772,7 @@ function Auth() {
                   </span>
                 </div>
                 <span className="text-[10px] sm:text-xs text-slate-500 font-mono uppercase tracking-widest">
-                  {step === 'login' ? 'Login Portal' : `Registration // Step ${step} of 3`}
+                  {step === 'login' ? 'OTP Login Portal' : `Registration // Step ${step} of 3`}
                 </span>
               </div>
 
@@ -588,7 +784,7 @@ function Auth() {
                 {sub}
               </p>
 
-              {/* Active Session Guard (blocks registering another squad while signed in) */}
+              {/* Active Session Guard */}
               {currentUser && step !== 'login' ? (
                 <div className="bg-[#111422] border border-amber-500/50 rounded-xl p-6 text-center space-y-4 shadow-xl">
                   <div className="w-12 h-12 mx-auto rounded-full bg-amber-500/10 border border-amber-500/40 text-amber-400 flex items-center justify-center text-xl font-bold">
@@ -634,7 +830,7 @@ function Auth() {
                       </div>
                     )}
                     <p className="text-[11px] text-slate-400 font-mono mt-3 leading-relaxed">
-                      Each candidate is permitted only one squad registration. If you want to view your squad, fix payment, or check admission status, use the options below.
+                      Each candidate is permitted only one squad registration.
                     </p>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
@@ -645,15 +841,6 @@ function Auth() {
                     >
                       GO TO DASHBOARD &gt;&gt;
                     </button>
-                    {userTeam && userTeam.payment?.status !== 'verified' && (
-                      <button
-                        type="button"
-                        onClick={() => navigate('/payment')}
-                        className="flex-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/50 text-emerald-300 font-mono font-bold text-xs uppercase py-2.5 transition"
-                      >
-                        {userTeam.payment?.status === 'rejected' ? 'RE-SUBMIT UTR &gt;&gt;' : 'VIEW PAYMENT / UTR &gt;&gt;'}
-                      </button>
-                    )}
                     <button
                       type="button"
                       onClick={async () => {
@@ -671,88 +858,96 @@ function Auth() {
               ) : (
                 <>
                   {/* ─────────────────────────────────────────────────────────── */}
-                  {/* STEP 1: Leader Email & Password                            */}
+                  {/* STEP 1: Leader Email (Passwordless)                         */}
                   {/* ─────────────────────────────────────────────────────────── */}
                   {step === 1 && (
                     <form className="space-y-4" onSubmit={handleStep1Next}>
-                      <div className="space-y-1">
-                        <label className={labelClass}>Leader Email ID *</label>
-                        <input
-                          type="email"
-                          autoComplete="email"
-                          placeholder="leader@gmail.com"
-                          value={email}
-                          onChange={(e) => {
-                            setEmail(e.target.value)
-                            setEmailError('')
-                          }}
-                          className={`${inputClass} ${emailError ? 'border-red-400' : ''}`}
-                          required
-                        />
+                      <div className="space-y-1.5">
+                        <label className={labelClass}>
+                          Leader Email Address <span className="text-amber-400">*</span>
+                        </label>
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                            <Mail className="w-4 h-4 text-slate-500" />
+                          </div>
+                          <input
+                            type="email"
+                            autoComplete="email"
+                            placeholder="e.g. leader@gmail.com"
+                            value={email}
+                            onChange={(e) => {
+                              setEmail(e.target.value)
+                              setEmailError('')
+                            }}
+                            className={`${inputClass} pl-10 ${emailError ? 'border-red-400 ring-1 ring-red-400/30' : ''}`}
+                            required
+                            autoFocus
+                          />
+                        </div>
                         {emailError && (
-                          <p className="text-[10px] sm:text-xs text-red-400 mt-1">
+                          <p className="text-xs text-red-400 mt-1 font-medium">
                             {emailError}
                           </p>
                         )}
                       </div>
 
-                      <div className="space-y-1">
-                        <label className={labelClass}>Create Account Password *</label>
-                        <div className="relative">
-                          <input
-                            type={showPassword ? 'text' : 'password'}
-                            autoComplete="new-password"
-                            placeholder="Choose a strong password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            className={`${inputClass} pr-16`}
-                            required
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowPassword((v) => !v)}
-                            className={toggleBtnClass}
-                          >
-                            {showPassword ? 'Hide' : 'Show'}
-                          </button>
+                      {/* Elevated Information Card */}
+                      <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-500/10 via-cyan-500/5 to-transparent border border-emerald-500/30 text-xs sm:text-sm text-slate-200 flex items-start gap-3 shadow-lg shadow-emerald-500/5">
+                        <div className="w-6 h-6 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs">
+                          🛡️
+                        </div>
+                        <div className="space-y-1 leading-relaxed">
+                          <strong className="text-emerald-300 font-semibold block text-xs uppercase tracking-wider font-sans">
+                            Passwordless Security Protocol
+                          </strong>
+                          <p className="text-slate-300 text-xs font-sans">
+                            No passwords to create or remember. Complete your squad registration and payment now, and access your account anytime with a secure 6-digit OTP delivered from <strong className="text-cyan-300">support@protechy.in</strong>.
+                          </p>
+                          <p className="text-[11px] text-amber-300/90 font-sans pt-1 flex items-center gap-1.5">
+                            <span>⚡</span>
+                            <span>Anti-Bot Shield: Incomplete or dropped registrations are never saved to our servers. Only completed squads with verified payment are recorded.</span>
+                          </p>
                         </div>
                       </div>
 
-                      <div className="p-3 bg-[#0d101a] border border-slate-800 rounded-lg text-xs font-mono text-slate-300">
-                        <span className="text-tactical font-bold">ℹ</span> You are registering as the <strong className="text-tactical">Squad Leader</strong>. Next, you will enter your squad details and profile details for you and all your teammates.
-                      </div>
-
                       {serverError && (
-                        <p className="text-[10px] sm:text-xs text-red-400">
+                        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/40 text-xs text-red-300 font-medium font-sans">
                           {serverError}
-                        </p>
+                        </div>
                       )}
 
                       <div className="pt-2">
                         <TactileButton
-                          disabled={!EMAIL_REGEX.test(email) || !password || checkingEmail}
+                          disabled={!EMAIL_REGEX.test(email) || checkingEmail}
                           className="w-full"
                         >
-                          {checkingEmail ? 'VERIFYING EMAIL...' : 'PROCEED TO SQUAD DETAILS >>'}
+                          {checkingEmail ? (
+                            <span className="flex items-center gap-2">
+                              <span className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                              VERIFYING EMAIL...
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-2">
+                              PROCEED TO SQUAD DETAILS <ArrowRight className="w-4 h-4" />
+                            </span>
+                          )}
                         </TactileButton>
                       </div>
 
                       <StepDots step={1} total={3} />
-                      <p className="text-center text-[10px] sm:text-xs text-slate-600">
-                        Step 1 of 3: Account Credentials
-                      </p>
 
-                      <div className="text-center pt-2 border-t border-slate-800/60 mt-4 flex flex-wrap items-center justify-center gap-2 text-xs text-slate-400 font-mono">
+                      <div className="text-center pt-3 border-t border-slate-800/80 mt-4 flex flex-wrap items-center justify-center gap-2 text-xs text-slate-400 font-sans">
                         <span>Already registered?</span>
                         <button
                           type="button"
                           onClick={() => {
                             setStep('login')
-                            setLoginTab('credentials')
+                            setLoginTab('otp')
+                            if (email) setLoginEmail(email.trim().toLowerCase())
                           }}
-                          className="text-tactical hover:underline uppercase font-bold"
+                          className="px-2.5 py-1 rounded-md bg-amber-400/10 hover:bg-amber-400/20 text-amber-400 border border-amber-400/30 uppercase font-bold text-xs transition cursor-pointer"
                         >
-                          Login
+                          OTP Login
                         </button>
                         <span>·</span>
                         <button
@@ -761,499 +956,434 @@ function Auth() {
                             setStep('login')
                             setLoginTab('partyCode')
                           }}
-                          className="text-cyan-400 hover:underline uppercase font-bold"
+                          className="px-2.5 py-1 rounded-md bg-cyan-400/10 hover:bg-cyan-400/20 text-cyan-400 border border-cyan-400/30 uppercase font-bold text-xs transition cursor-pointer"
                         >
                           Join with Party Code
                         </button>
                       </div>
                     </form>
                   )}
+
+                  {/* ─────────────────────────────────────────────────────────── */}
+                  {/* STEP 2: Squad & Roster (No gender/roll/course, common coll) */}
+                  {/* ─────────────────────────────────────────────────────────── */}
+                  {step === 2 && (
+                    <form className="space-y-5" onSubmit={handleStep2Next}>
+                      {/* Squad Configuration Header */}
+                      <div className="p-4 rounded-xl bg-[#111524] border border-tactical/30 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs font-mono font-bold text-tactical uppercase tracking-wider flex items-center gap-1.5">
+                            <span>🛡️</span> SQUAD CONFIGURATION
+                          </div>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            Name, Size & Shared College
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between">
+                              <label className={labelClass}>Squad / Team Name *</label>
+                              {squadNameStatus === 'checking' && (
+                                <span className="text-[10px] text-amber-400 font-sans animate-pulse">
+                                  Checking...
+                                </span>
+                              )}
+                              {squadNameStatus === 'available' && (
+                                <span className="text-[10px] text-emerald-400 font-sans font-semibold flex items-center gap-1">
+                                  ✓ Available
+                                </span>
+                              )}
+                              {squadNameStatus === 'taken' && (
+                                <span className="text-[10px] text-rose-400 font-sans font-semibold flex items-center gap-1">
+                                  ⚠️ Already taken
+                                </span>
+                              )}
+                            </div>
+                            <input
+                              type="text"
+                              placeholder="e.g. CYBER_VORTEX"
+                              value={squadName}
+                              onChange={(e) => {
+                                setSquadName(e.target.value)
+                                if (squadNameError) setSquadNameError('')
+                              }}
+                              className={`${inputClass} ${
+                                squadNameStatus === 'taken'
+                                  ? 'border-rose-500/80 focus:border-rose-400 focus:ring-rose-500/20'
+                                  : squadNameStatus === 'available'
+                                  ? 'border-emerald-500/80 focus:border-emerald-400 focus:ring-emerald-500/20'
+                                  : ''
+                              }`}
+                              required
+                            />
+                            {squadNameError && (
+                              <p className="text-[11px] text-rose-400 font-sans mt-0.5">
+                                {squadNameError}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className={labelClass}>Total Squad Size (2 to 4 Members) *</label>
+                            <div className="grid grid-cols-3 gap-2">
+                              {[2, 3, 4].map((sz) => (
+                                <button
+                                  key={sz}
+                                  type="button"
+                                  onClick={() => setSquadSize(sz)}
+                                  className={`py-2 px-1 rounded text-xs font-mono font-bold transition border ${
+                                    squadSize === sz
+                                      ? 'bg-tactical text-black border-tactical shadow'
+                                      : 'bg-[#090b12] text-slate-300 border-slate-700 hover:border-slate-500'
+                                  }`}
+                                >
+                                  {sz} Members {sz === 4 ? '★' : ''}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Common College for ALL Squad Members */}
+                        <div className="space-y-1 pt-1">
+                          <label className={labelClass}>College / University Name * (Shared by all members)</label>
+                          <input
+                            type="text"
+                            placeholder="Global Institute of Technology, Jaipur"
+                            value={college}
+                            onChange={(e) => setCollege(e.target.value)}
+                            className={inputClass}
+                            required
+                          />
+                          <p className="text-[10px] text-slate-400 font-mono">
+                            All teammates in this squad will be registered under this institution.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Section: Leader Profile */}
+                      <div className="p-4 rounded-xl bg-[#090b14] border border-slate-800 space-y-3">
+                        <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded bg-tactical/20 border border-tactical text-tactical text-[10px] font-bold">
+                              ★ MEMBER #1: SQUAD LEADER (YOU)
+                            </span>
+                            <span className="text-xs text-slate-400">{email}</span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className={labelClass}>First name *</label>
+                            <input
+                              type="text"
+                              placeholder="Arjun"
+                              value={firstName}
+                              onChange={(e) => setFirstName(e.target.value)}
+                              className={inputClass}
+                              required
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className={labelClass}>Last name *</label>
+                            <input
+                              type="text"
+                              placeholder="Sharma"
+                              value={lastName}
+                              onChange={(e) => setLastName(e.target.value)}
+                              className={inputClass}
+                              required
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className={labelClass}>Mobile Number (10 Digits) *</label>
+                          <input
+                            type="tel"
+                            placeholder="9876543210"
+                            value={phone}
+                            onChange={(e) => {
+                              setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))
+                              setPhoneError('')
+                            }}
+                            className={`${inputClass} ${phoneError ? 'border-red-400' : ''}`}
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      {/* Section: Teammate Profiles */}
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs font-mono font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                            <span>👥</span> TEAMMATES ({squadSize - 1} REQUIRED // TOTAL SQUAD: {squadSize} MEMBERS)
+                          </div>
+                          <span className="text-[10px] text-amber-400 font-mono">
+                            One Email = One Registration
+                          </span>
+                        </div>
+
+                        {Array.from({ length: squadSize - 1 }, (_, idx) => {
+                          const memberNum = idx + 2
+                          const tm = teammates[idx]
+
+                          return (
+                            <div
+                              key={idx}
+                              className="p-4 rounded-xl bg-[#090b14] border border-slate-800 space-y-3 relative"
+                            >
+                              <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                                <span className="px-2 py-0.5 rounded bg-[#161c2e] border border-slate-700 text-slate-300 text-[10px] font-bold">
+                                  MEMBER #{memberNum}: TEAMMATE {idx + 1}
+                                </span>
+                                <span className="text-[10px] text-slate-500 hidden sm:inline">
+                                  College: {college || 'Shared Institution'}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                  <label className={labelClass}>First name *</label>
+                                  <input
+                                    type="text"
+                                    placeholder="Teammate First Name"
+                                    value={tm.firstName}
+                                    onChange={(e) => updateTeammate(idx, 'firstName', e.target.value)}
+                                    className={inputClass}
+                                    required
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className={labelClass}>Last name *</label>
+                                  <input
+                                    type="text"
+                                    placeholder="Teammate Last Name"
+                                    value={tm.lastName}
+                                    onChange={(e) => updateTeammate(idx, 'lastName', e.target.value)}
+                                    className={inputClass}
+                                    required
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                  <label className={labelClass}>Email Address *</label>
+                                  <input
+                                    type="email"
+                                    placeholder="teammate@college.edu"
+                                    value={tm.email}
+                                    onChange={(e) => updateTeammate(idx, 'email', e.target.value)}
+                                    className={inputClass}
+                                    required
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className={labelClass}>Phone number (10 Digits) *</label>
+                                  <input
+                                    type="tel"
+                                    placeholder="9876543210"
+                                    value={tm.phone}
+                                    onChange={(e) =>
+                                      updateTeammate(idx, 'phone', e.target.value.replace(/\D/g, '').slice(0, 10))
+                                    }
+                                    className={inputClass}
+                                    required
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      {serverError && (
+                        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/40 text-red-400 text-xs">
+                          ⚠️ {serverError}
+                        </div>
+                      )}
+
+                      <div className="flex gap-2.5 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setStep(1)}
+                          className="px-4 py-2.5 rounded-md bg-[#171924] hover:bg-[#1e2233] border border-slate-700 text-slate-300 font-mono text-xs uppercase tracking-wider transition-colors"
+                        >
+                          ← Back
+                        </button>
+                        <TactileButton className="flex-1">
+                          PROCEED TO PAYMENT &amp; UTR &gt;&gt;
+                        </TactileButton>
+                      </div>
+
+                      <StepDots step={2} total={3} />
+                      <p className="text-center text-[10px] sm:text-xs text-slate-600">
+                        Step 2 of 3: Squad Configuration &amp; Teammate Profiles
+                      </p>
+                    </form>
+                  )}
+
+                  {/* ─────────────────────────────────────────────────────────── */}
+                  {/* STEP 3: Payment (₹800, Mobile Redirects & UTR Gate)         */}
+                  {/* ─────────────────────────────────────────────────────────── */}
+                  {step === 3 && (
+                    <form className="space-y-4" onSubmit={handleStep3Submit}>
+                      {/* Critical Warning Banner: Do NOT leave/close tab */}
+                      <div className="p-3.5 rounded-xl bg-amber-500/15 border-2 border-amber-500/60 text-amber-300 text-xs font-mono flex items-start gap-3 shadow-lg">
+                        <span className="text-xl leading-none">⚠️</span>
+                        <div>
+                          <strong className="block text-amber-200 font-bold uppercase tracking-wider mb-0.5">
+                            DO NOT CLOSE OR REFRESH THIS TAB
+                          </strong>
+                          <span className="text-[11px] text-amber-200/90 leading-relaxed block">
+                            If completing payment in your mobile UPI app, your draft is safely saved. Return to this exact tab immediately to enter your 12-digit UTR transaction ID.
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Payment Card */}
+                      <div className="p-4 rounded-xl bg-[#090b14] border border-slate-800 space-y-4">
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                          <div>
+                            <div className="text-xs font-mono font-bold text-white uppercase">
+                              {squadName || 'YOUR SQUAD'}
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                              {squadSize} Members · {college}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-arcade text-lg text-tactical font-bold">₹{SQUAD_FEE}.00</div>
+                            <div className="text-[9px] text-slate-400 uppercase font-mono">Flat Squad Fee</div>
+                          </div>
+                        </div>
+
+                        {/* QR Code Matrix */}
+                        <div className="flex flex-col sm:flex-row items-center justify-center gap-5 py-2">
+                          <div className="p-3 rounded-xl bg-white border-2 border-tactical shadow-xl flex items-center justify-center">
+                            <QRCodeSvg value={UNIVERSAL_UPI_URI} size={160} />
+                          </div>
+
+                          <div className="space-y-3 text-center sm:text-left">
+                            <div>
+                              <div className="text-[10px] text-slate-400 uppercase font-mono">
+                                Official UPI ID:
+                              </div>
+                              <div className="flex items-center gap-1.5 mt-1 justify-center sm:justify-start">
+                                <span className="text-xs font-mono font-bold text-white bg-[#131726] px-2.5 py-1.5 rounded border border-slate-700 select-all">
+                                  {OFFICIAL_UPI_ID}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={handleCopyUpi}
+                                  className="px-2.5 py-1.5 rounded bg-[#1e2338] hover:bg-tactical hover:text-black text-slate-300 text-[10px] font-mono font-bold transition"
+                                >
+                                  {copiedUpi ? '✓ COPIED' : '📋 COPY'}
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="text-[10px] text-slate-400 font-mono">
+                              Recipient: <span className="text-tactical font-semibold">Codefiesta 5.0</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Mobile Direct Redirect Buttons */}
+                        <div className="space-y-2 pt-2 border-t border-slate-800/80">
+                          <div className="text-[10px] font-mono text-slate-400 uppercase tracking-wider text-center">
+                            ⚡ Quick Pay via UPI App (Click on Mobile to Redirect)
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            <a
+                              href={`tez://upi/pay?pa=${OFFICIAL_UPI_ID}&pn=Codefiesta%205.0&am=${SQUAD_FEE}&cu=INR&tn=Codefiesta%205.0%20Registration`}
+                              className="p-2.5 rounded-lg bg-[#121626] hover:bg-[#1a2038] border border-blue-500/40 hover:border-blue-400 text-blue-300 text-xs font-mono font-bold text-center flex items-center justify-center gap-1.5 transition active:scale-95"
+                            >
+                              <span>🔵</span> Google Pay
+                            </a>
+                            <a
+                              href={`phonepe://pay?pa=${OFFICIAL_UPI_ID}&pn=Codefiesta%205.0&am=${SQUAD_FEE}&cu=INR&tn=Codefiesta%205.0%20Registration`}
+                              className="p-2.5 rounded-lg bg-[#121626] hover:bg-[#1a2038] border border-purple-500/40 hover:border-purple-400 text-purple-300 text-xs font-mono font-bold text-center flex items-center justify-center gap-1.5 transition active:scale-95"
+                            >
+                              <span>🟣</span> PhonePe
+                            </a>
+                            <a
+                              href={`paytmmp://pay?pa=${OFFICIAL_UPI_ID}&pn=Codefiesta%205.0&am=${SQUAD_FEE}&cu=INR&tn=Codefiesta%205.0%20Registration`}
+                              className="p-2.5 rounded-lg bg-[#121626] hover:bg-[#1a2038] border border-cyan-500/40 hover:border-cyan-400 text-cyan-300 text-xs font-mono font-bold text-center flex items-center justify-center gap-1.5 transition active:scale-95"
+                            >
+                              <span>🔷</span> Paytm
+                            </a>
+                            <a
+                              href={UNIVERSAL_UPI_URI}
+                              className="p-2.5 rounded-lg bg-[#121626] hover:bg-[#1a2038] border border-tactical/50 hover:border-tactical text-tactical text-xs font-mono font-bold text-center flex items-center justify-center gap-1.5 transition active:scale-95"
+                            >
+                              <span>⚡</span> Any UPI App
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* UTR Input Field */}
+                      <div className="space-y-1.5">
+                        <label className={labelClass}>
+                          Enter 12-Digit UPI Transaction Reference (UTR) *
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. 428901238910"
+                          value={utr}
+                          onChange={(e) => {
+                            setUtr(e.target.value)
+                            setUtrError('')
+                            setServerError('')
+                          }}
+                          className={`${inputClass} text-sm font-bold tracking-widest ${
+                            utrError ? 'border-red-400' : ''
+                          }`}
+                          required
+                        />
+                        <p className="text-[10px] text-slate-400 font-mono">
+                          Found in your payment receipt after transferring ₹800 to {OFFICIAL_UPI_ID}.
+                        </p>
+                        {utrError && (
+                          <p className="text-[10px] sm:text-xs text-red-400 mt-1">
+                            {utrError}
+                          </p>
+                        )}
+                      </div>
+
+                      {serverError && (
+                        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/40 text-red-400 text-xs">
+                          ⚠️ {serverError}
+                        </div>
+                      )}
+
+                      <div className="flex gap-2.5 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setStep(2)}
+                          className="px-4 py-2.5 rounded-md bg-[#171924] hover:bg-[#1e2233] border border-slate-700 text-slate-300 font-mono text-xs uppercase tracking-wider transition-colors"
+                        >
+                          ← Back to Roster
+                        </button>
+                        <TactileButton disabled={submitting} className="flex-1">
+                          {submitting ? 'SUBMITTING & LOCKING UTR...' : '💳 SUBMIT UTR & FINALIZE SQUAD >>'}
+                        </TactileButton>
+                      </div>
+
+                      <StepDots step={3} total={3} />
+                      <p className="text-center text-[10px] sm:text-xs text-slate-600">
+                        Step 3 of 3: Payment Verification &amp; UTR Submission
+                      </p>
+                    </form>
+                  )}
                 </>
               )}
 
               {/* ─────────────────────────────────────────────────────────── */}
-              {/* STEP 2: Leader & All Teammates Details                     */}
-              {/* ─────────────────────────────────────────────────────────── */}
-              {step === 2 && (
-                <form className="space-y-5" onSubmit={handleStep2Next}>
-                  {/* Squad Configuration Header */}
-                  <div className="p-4 rounded-xl bg-[#111524] border border-tactical/30 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="text-xs font-mono font-bold text-tactical uppercase tracking-wider flex items-center gap-1.5">
-                        <span>🛡️</span> SQUAD CONFIGURATION
-                      </div>
-                      <span className="text-[10px] text-slate-400 font-mono">
-                        Unique Name & Squad Size
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className={labelClass}>Squad / Team Name *</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. CYBER_VORTEX"
-                          value={squadName}
-                          onChange={(e) => setSquadName(e.target.value)}
-                          className={inputClass}
-                          required
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className={labelClass}>Total Squad Size (Min 2, Max 4 Players) *</label>
-                        <div className="grid grid-cols-3 gap-2">
-                          {[2, 3, 4].map((sz) => (
-                            <button
-                              key={sz}
-                              type="button"
-                              onClick={() => setSquadSize(sz)}
-                              className={`py-2 px-1 rounded text-xs font-mono font-bold transition border ${
-                                squadSize === sz
-                                  ? 'bg-tactical text-black border-tactical shadow'
-                                  : 'bg-[#090b12] text-slate-300 border-slate-700 hover:border-slate-500'
-                              }`}
-                            >
-                              {sz} Members {sz === 4 ? '★' : ''}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Section: Leader Profile */}
-                  <div className="p-4 rounded-xl bg-[#090b14] border border-slate-800 space-y-3">
-                    <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 rounded bg-tactical/20 border border-tactical text-tactical text-[10px] font-bold">
-                          ★ MEMBER #1: SQUAD LEADER (YOU)
-                        </span>
-                        <span className="text-xs text-slate-400">{email}</span>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className={labelClass}>First name *</label>
-                        <input
-                          type="text"
-                          placeholder="Arjun"
-                          value={firstName}
-                          onChange={(e) => setFirstName(e.target.value)}
-                          className={inputClass}
-                          required
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className={labelClass}>Last name *</label>
-                        <input
-                          type="text"
-                          placeholder="Sharma"
-                          value={lastName}
-                          onChange={(e) => setLastName(e.target.value)}
-                          className={inputClass}
-                          required
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className={labelClass}>Phone number (10 Digits) *</label>
-                        <input
-                          type="tel"
-                          placeholder="9876543210"
-                          value={phone}
-                          onChange={(e) => {
-                            setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))
-                            setPhoneError('')
-                          }}
-                          className={`${inputClass} ${phoneError ? 'border-red-400' : ''}`}
-                          required
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className={labelClass}>College ID / Roll No. *</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. 23GIT1001"
-                          value={rollNumber}
-                          onChange={(e) => setRollNumber(e.target.value)}
-                          className={inputClass}
-                          required
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className={labelClass}>College / University Name * (Type Name)</label>
-                      <input
-                        type="text"
-                        placeholder="Global Institute of Technology, Jaipur"
-                        value={college}
-                        onChange={(e) => setCollege(e.target.value)}
-                        className={inputClass}
-                        required
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-6 gap-2.5 sm:gap-3">
-                      <div className="col-span-3 space-y-1">
-                        <label className={labelClass}>Course *</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. B.Tech CSE"
-                          value={course}
-                          onChange={(e) => setCourse(e.target.value)}
-                          className={inputClass}
-                          required
-                        />
-                      </div>
-                      <div className="col-span-2 space-y-1">
-                        <label className={labelClass}>Year *</label>
-                        <Dropdown
-                          options={YEAR_OPTIONS}
-                          value={year}
-                          onChange={setYear}
-                          placeholder="Select"
-                        />
-                      </div>
-                      <div className="col-span-1 space-y-1">
-                        <label className={labelClass}>Sex *</label>
-                        <Dropdown
-                          options={GENDER_OPTIONS}
-                          value={gender}
-                          onChange={setGender}
-                          placeholder="—"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Section: Teammate Profiles */}
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="text-xs font-mono font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                        <span>👥</span> TEAMMATES ({squadSize - 1} REQUIRED // TOTAL SQUAD: {squadSize} MEMBERS)
-                      </div>
-                      <span className="text-[10px] text-amber-400 font-mono">
-                        One Email = One Registration
-                      </span>
-                    </div>
-
-                    {Array.from({ length: squadSize - 1 }, (_, idx) => {
-                      const memberNum = idx + 2
-                      const tm = teammates[idx]
-
-                      return (
-                        <div
-                          key={idx}
-                          className="p-4 rounded-xl bg-[#090b14] border border-slate-800 space-y-3 relative"
-                        >
-                          <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-                            <span className="px-2 py-0.5 rounded bg-[#161c2e] border border-slate-700 text-slate-300 text-[10px] font-bold">
-                              MEMBER #{memberNum}: TEAMMATE {idx + 1}
-                            </span>
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] text-slate-500 hidden sm:inline">
-                                Will receive unique personalized join code
-                              </span>
-                              {squadSize > 2 && (
-                                <button
-                                  type="button"
-                                  onClick={() => setSquadSize((s) => Math.max(2, s - 1))}
-                                  className="text-[10px] font-mono text-red-400 hover:text-red-300 px-1.5 py-0.5 rounded hover:bg-red-500/10 transition"
-                                  title="Remove this teammate slot"
-                                >
-                                  ✕ Remove Slot
-                                </button>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="space-y-1">
-                              <label className={labelClass}>First name *</label>
-                              <input
-                                type="text"
-                                placeholder="Teammate First Name"
-                                value={tm.firstName}
-                                onChange={(e) => updateTeammate(idx, 'firstName', e.target.value)}
-                                className={inputClass}
-                                required
-                              />
-                            </div>
-                            <div className="space-y-1">
-                              <label className={labelClass}>Last name *</label>
-                              <input
-                                type="text"
-                                placeholder="Teammate Last Name"
-                                value={tm.lastName}
-                                onChange={(e) => updateTeammate(idx, 'lastName', e.target.value)}
-                                className={inputClass}
-                                required
-                              />
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div className="space-y-1">
-                              <label className={labelClass}>Email Address *</label>
-                              <input
-                                type="email"
-                                placeholder="teammate@college.edu"
-                                value={tm.email}
-                                onChange={(e) => updateTeammate(idx, 'email', e.target.value)}
-                                className={inputClass}
-                                required
-                              />
-                            </div>
-                            <div className="space-y-1">
-                              <label className={labelClass}>Phone number (10 Digits) *</label>
-                              <input
-                                type="tel"
-                                placeholder="9876543210"
-                                value={tm.phone}
-                                onChange={(e) =>
-                                  updateTeammate(
-                                    idx,
-                                    'phone',
-                                    e.target.value.replace(/\D/g, '').slice(0, 10)
-                                  )
-                                }
-                                className={inputClass}
-                                required
-                              />
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div className="space-y-1">
-                              <label className={labelClass}>College Name *</label>
-                              <input
-                                type="text"
-                                placeholder={college || 'College / University'}
-                                value={tm.college || ''}
-                                onChange={(e) => updateTeammate(idx, 'college', e.target.value)}
-                                className={inputClass}
-                                required
-                              />
-                            </div>
-                            <div className="space-y-1">
-                              <label className={labelClass}>Roll No / College ID *</label>
-                              <input
-                                type="text"
-                                placeholder="e.g. 23GIT1002"
-                                value={tm.rollNumber}
-                                onChange={(e) => updateTeammate(idx, 'rollNumber', e.target.value)}
-                                className={inputClass}
-                                required
-                              />
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-6 gap-2.5 sm:gap-3">
-                            <div className="col-span-3 space-y-1">
-                              <label className={labelClass}>Course *</label>
-                              <input
-                                type="text"
-                                placeholder="e.g. B.Tech CSE"
-                                value={tm.course}
-                                onChange={(e) => updateTeammate(idx, 'course', e.target.value)}
-                                className={inputClass}
-                                required
-                              />
-                            </div>
-                            <div className="col-span-2 space-y-1">
-                              <label className={labelClass}>Year *</label>
-                              <Dropdown
-                                options={YEAR_OPTIONS}
-                                value={tm.year}
-                                onChange={(val) => updateTeammate(idx, 'year', val)}
-                                placeholder="Select"
-                              />
-                            </div>
-                            <div className="col-span-1 space-y-1">
-                              <label className={labelClass}>Sex *</label>
-                              <Dropdown
-                                options={GENDER_OPTIONS}
-                                value={tm.gender}
-                                onChange={(val) => updateTeammate(idx, 'gender', val)}
-                                placeholder="—"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })}
-
-                    {/* Add Another Teammate Slot Button (Max 4 Members Total) */}
-                    {squadSize < 4 && (
-                      <div className="pt-1">
-                        <button
-                          type="button"
-                          onClick={() => setSquadSize((s) => Math.min(4, s + 1))}
-                          className="w-full py-2.5 rounded-xl bg-[#121729] hover:bg-[#1a2038] border border-dashed border-tactical/50 text-tactical font-mono text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm"
-                        >
-                          <span className="text-base font-black">+</span>
-                          <span>ADD ANOTHER TEAMMATE SLOT (CURRENT: {squadSize} MEMBERS // MAX 4)</span>
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {serverError && (
-                    <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/40 text-red-400 text-xs">
-                      ⚠️ {serverError}
-                    </div>
-                  )}
-
-                  <div className="flex gap-2.5 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setStep(1)}
-                      className="px-4 py-2.5 rounded-md bg-[#171924] hover:bg-[#1e2233] border border-slate-700 text-slate-300 font-mono text-xs uppercase tracking-wider transition-colors"
-                    >
-                      ← Back
-                    </button>
-                    <TactileButton className="flex-1">
-                      PROCEED TO PAYMENT &gt;&gt;
-                    </TactileButton>
-                  </div>
-
-                  <StepDots step={2} total={3} />
-                  <p className="text-center text-[10px] sm:text-xs text-slate-600">
-                    Step 2 of 3: Roster Details
-                  </p>
-                </form>
-              )}
-
-              {/* ─────────────────────────────────────────────────────────── */}
-              {/* STEP 3: Payment Scanner & UTR Final Submission            */}
-              {/* ─────────────────────────────────────────────────────────── */}
-              {step === 3 && (
-                <form className="space-y-5" onSubmit={handleStep3Submit}>
-                  {/* Payment HUD Card */}
-                  <div className="p-5 rounded-xl bg-[#090c14] border border-tactical/40 space-y-4">
-                    <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                      <div>
-                        <div className="text-xs font-mono font-bold text-tactical uppercase tracking-wider">
-                          OFFICIAL PAYMENT GATEWAY
-                        </div>
-                        <div className="text-[10px] text-slate-400 font-mono">
-                          Squad: <strong className="text-white">{squadName}</strong> ({squadSize} Members)
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-lg font-sans font-black text-tactical">₹800</div>
-                        <div className="text-[9px] text-slate-400 uppercase font-mono">Total Squad Fee</div>
-                      </div>
-                    </div>
-
-                    {/* QR Code Matrix */}
-                    <div className="flex flex-col sm:flex-row items-center justify-center gap-6 py-2">
-                      <div className="p-3 rounded-xl bg-white border-2 border-tactical shadow-xl flex items-center justify-center">
-                        <QRCodeSvg value={upiPaymentUri} size={168} />
-                      </div>
-
-                      <div className="space-y-2.5 text-center sm:text-left max-w-[260px]">
-                        <div className="text-xs text-slate-300 font-mono font-semibold">
-                          Scan & Pay via any UPI App
-                        </div>
-                        <div className="flex flex-wrap gap-1.5 justify-center sm:justify-start">
-                          {['GPay', 'PhonePe', 'Paytm', 'BHIM', 'CRED'].map((app) => (
-                            <span
-                              key={app}
-                              className="px-2 py-0.5 rounded bg-[#141829] border border-slate-700 text-[9px] font-mono text-slate-300"
-                            >
-                              {app}
-                            </span>
-                          ))}
-                        </div>
-
-                        <div className="pt-1">
-                          <div className="text-[10px] text-slate-400 uppercase font-mono">
-                            Official Merchant UPI ID:
-                          </div>
-                          <div className="flex items-center gap-1.5 mt-1 justify-center sm:justify-start">
-                            <span className="text-xs font-mono font-bold text-white bg-[#131726] px-2.5 py-1 rounded border border-slate-700 select-all">
-                              git.codefiesta@upi
-                            </span>
-                            <button
-                              type="button"
-                              onClick={handleCopyUpi}
-                              className="px-2 py-1 rounded bg-[#1e2338] hover:bg-tactical hover:text-black text-slate-300 text-[10px] font-mono transition"
-                            >
-                              {copiedUpi ? '✓ COPIED' : '📋 COPY'}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Instructions */}
-                    <div className="p-3 rounded bg-[#101422] border border-slate-800 text-[10px] sm:text-xs text-slate-400 space-y-1">
-                      <div className="font-bold text-slate-300">Payment Steps:</div>
-                      <div>1. Scan QR with your UPI app or pay ₹800 to <code className="text-tactical">git.codefiesta@upi</code>.</div>
-                      <div>2. Copy the 12-digit UTR / UPI Transaction Reference Number from your payment receipt.</div>
-                      <div>3. Paste the UTR below and click Final Submission. Our organizing committee will match your transaction and unlock your dashboard.</div>
-                    </div>
-                  </div>
-
-                  {/* UTR Input Field */}
-                  <div className="space-y-1.5">
-                    <label className={labelClass}>
-                      Enter 12-Digit UPI Transaction Reference (UTR) *
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 428901238910"
-                      value={utr}
-                      onChange={(e) => {
-                        setUtr(e.target.value)
-                        setUtrError('')
-                      }}
-                      className={`${inputClass} text-sm font-bold tracking-widest ${
-                        utrError ? 'border-red-400' : ''
-                      }`}
-                      required
-                    />
-                    {utrError && (
-                      <p className="text-[10px] sm:text-xs text-red-400 mt-1">
-                        {utrError}
-                      </p>
-                    )}
-                  </div>
-
-                  {serverError && (
-                    <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/40 text-red-400 text-xs">
-                      ⚠️ {serverError}
-                    </div>
-                  )}
-
-                  <div className="flex gap-2.5 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setStep(2)}
-                      className="px-4 py-2.5 rounded-md bg-[#171924] hover:bg-[#1e2233] border border-slate-700 text-slate-300 font-mono text-xs uppercase tracking-wider transition-colors"
-                    >
-                      ← Back to Details
-                    </button>
-                    <TactileButton disabled={submitting} className="flex-1">
-                      {submitting ? 'SUBMITTING REGISTRATION...' : '💳 FINAL SUBMISSION & SUBMIT UTR'}
-                    </TactileButton>
-                  </div>
-
-                  <StepDots step={3} total={3} />
-                  <p className="text-center text-[10px] sm:text-xs text-slate-600">
-                    Step 3 of 3: Payment Verification
-                  </p>
-                </form>
-              )}
-
-              {/* ─────────────────────────────────────────────────────────── */}
-              {/* LOGIN MODE (Dual Tabs: Account Login vs Party Code)       */}
+              {/* PASSWORDLESS LOGIN (Email + 6-digit OTP from support@protechy.in) */}
               {/* ─────────────────────────────────────────────────────────── */}
               {step === 'login' && (
                 <div className="space-y-4">
@@ -1261,15 +1391,15 @@ function Auth() {
                   <div className="grid grid-cols-2 gap-1.5 p-1 bg-[#090c16] rounded-xl border border-slate-800">
                     <button
                       type="button"
-                      onClick={() => setLoginTab('credentials')}
+                      onClick={() => setLoginTab('otp')}
                       className={`py-2 px-3 rounded-lg text-xs font-mono font-bold uppercase transition flex items-center justify-center gap-1.5 ${
-                        loginTab === 'credentials'
+                        loginTab === 'otp'
                           ? 'bg-tactical text-black shadow-md'
                           : 'text-slate-400 hover:text-white'
                       }`}
                     >
-                      <span>🔐</span>
-                      <span>Account Login</span>
+                      <span>✉️</span>
+                      <span>Email OTP Login</span>
                     </button>
                     <button
                       type="button"
@@ -1281,88 +1411,117 @@ function Auth() {
                       }`}
                     >
                       <span>🎮</span>
-                      <span>Join with Party Code</span>
+                      <span>Party Code</span>
                     </button>
                   </div>
 
-                  {/* TAB 1: Account Login (Email & Password) */}
-                  {loginTab === 'credentials' && (
-                    <form className="space-y-3 sm:space-y-4" onSubmit={handleLogin}>
-                      <div className="space-y-1">
-                        <label className={labelClass}>Email ID</label>
-                        <input
-                          type="email"
-                          autoComplete="email"
-                          placeholder="leader@gmail.com"
-                          value={loginEmail}
-                          onChange={(e) => {
-                            setLoginEmail(e.target.value)
-                            setLoginError('')
-                          }}
-                          className={`${inputClass} ${
-                            loginError && !EMAIL_REGEX.test(loginEmail)
-                              ? 'border-red-400'
-                              : ''
-                          }`}
-                          required
-                        />
-                        {loginError && !EMAIL_REGEX.test(loginEmail) && (
-                          <p className="text-[10px] sm:text-xs text-red-400">
-                            {loginError}
-                          </p>
-                        )}
-                      </div>
+                  {/* TAB 1: Passwordless Email OTP Login */}
+                  {loginTab === 'otp' && (
+                    <div className="space-y-4">
+                      {!otpDispatched ? (
+                        <form className="space-y-3 sm:space-y-4" onSubmit={handleSendOtp}>
+                          <div className="space-y-1">
+                            <label className={labelClass}>Your Registered Email Address</label>
+                            <input
+                              type="email"
+                              autoComplete="email"
+                              placeholder="Enter your email (e.g. leader@gmail.com)"
+                              value={loginEmail}
+                              onChange={(e) => {
+                                setLoginEmail(e.target.value)
+                                setOtpError('')
+                              }}
+                              className={`${inputClass} ${otpError ? 'border-red-400' : ''}`}
+                              required
+                            />
+                            <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono mt-1">
+                              <span>Delivered to your email from: support@protechy.in</span>
+                              <span>⏱️ 10 min validity</span>
+                            </div>
+                          </div>
 
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <label className={labelClass}>Password</label>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setForgotEmail(loginEmail || '')
-                              setForgotSubmitted(false)
-                              setForgotMsg('')
-                              setShowForgotModal(true)
-                            }}
-                            className="text-[10px] font-mono text-tactical hover:underline uppercase tracking-wider font-semibold"
-                          >
-                            Forgot Password?
-                          </button>
-                        </div>
-                        <div className="relative">
-                          <input
-                            type={showPassword ? 'text' : 'password'}
-                            autoComplete="current-password"
-                            placeholder="Enter your password"
-                            value={loginPassword}
-                            onChange={(e) => {
-                              setLoginPassword(e.target.value)
-                              setLoginError('')
-                            }}
-                            className={`${inputClass} pr-16`}
-                            required
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowPassword((v) => !v)}
-                            className={toggleBtnClass}
-                          >
-                            {showPassword ? 'Hide' : 'Show'}
-                          </button>
-                        </div>
-                      </div>
+                          {otpError && (
+                            <p className="text-[10px] sm:text-xs text-red-400">
+                              {otpError}
+                            </p>
+                          )}
 
-                      {loginError && EMAIL_REGEX.test(loginEmail) && (
-                        <p className="text-[10px] sm:text-xs text-red-400">
-                          {loginError}
-                        </p>
+                          <div className="pt-2">
+                            <TactileButton disabled={otpLoading} className="w-full">
+                              {otpLoading ? 'DISPATCHING OTP...' : 'SEND 6-DIGIT OTP >>'}
+                            </TactileButton>
+                          </div>
+                        </form>
+                      ) : (
+                        <form className="space-y-3 sm:space-y-4" onSubmit={handleVerifyOtp}>
+                          <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/40 text-emerald-300 text-xs font-mono space-y-1.5 shadow-lg shadow-emerald-500/5">
+                            <div className="font-bold flex items-center gap-1.5 text-emerald-400">
+                              <span>✓</span> 6-Digit OTP Dispatched to Your Inbox!
+                            </div>
+                            <div className="text-slate-300 text-[11px] leading-relaxed">
+                              Delivered to: <span className="text-amber-400 font-bold underline">{loginEmail}</span>
+                              <br />
+                              Sender: <span className="text-white font-semibold">support@protechy.in</span>
+                            </div>
+                            <div className="text-[10px] text-emerald-400/90 flex items-center justify-between pt-1 border-t border-emerald-500/20">
+                              <span>⏱️ Code valid for <strong>10 minutes</strong></span>
+                              <span>Daily attempts left: <strong>{attemptsLeft}/5</strong></span>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className={labelClass}>Enter 6-Digit OTP</label>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              maxLength={6}
+                              placeholder="123456"
+                              value={loginOtp}
+                              onChange={(e) => {
+                                setLoginOtp(e.target.value.replace(/\D/g, '').slice(0, 6))
+                                setOtpError('')
+                              }}
+                              className={`${inputClass} text-center font-bold text-base tracking-[0.3em]`}
+                              required
+                              autoFocus
+                            />
+                          </div>
+
+                          {otpError && (
+                            <p className="text-[10px] sm:text-xs text-red-400">
+                              {otpError}
+                            </p>
+                          )}
+
+                          <div className="pt-2">
+                            <TactileButton disabled={submitting || loginOtp.length < 6} className="w-full">
+                              {submitting ? 'VERIFYING...' : 'VERIFY & ENTER DASHBOARD >>'}
+                            </TactileButton>
+                          </div>
+
+                          <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOtpDispatched(false)
+                                setLoginOtp('')
+                                setOtpError('')
+                              }}
+                              className="text-slate-400 hover:text-white underline font-mono text-[11px]"
+                            >
+                              ← Change Email
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleSendOtp}
+                              disabled={otpLoading}
+                              className="text-tactical hover:underline font-mono text-[11px] font-bold"
+                            >
+                              {otpLoading ? 'Resending...' : 'Resend OTP'}
+                            </button>
+                          </div>
+                        </form>
                       )}
-
-                      <div className="pt-2">
-                        <TactileButton disabled={submitting} className="w-full">
-                          {submitting ? 'SIGNING IN...' : 'LOGIN >>'}
-                        </TactileButton>
-                      </div>
 
                       <div className="text-center pt-2 border-t border-slate-800/60 mt-4 space-y-1.5">
                         <p className="text-xs text-slate-400 font-mono">
@@ -1386,10 +1545,10 @@ function Auth() {
                           </button>
                         </p>
                       </div>
-                    </form>
+                    </div>
                   )}
 
-                  {/* TAB 2: Join with Party Code (Teammate Access - No Password Required) */}
+                  {/* TAB 2: Join with Party Code (Teammates) */}
                   {loginTab === 'partyCode' && (
                     <form className="space-y-4" onSubmit={handlePartyCodeJoin}>
                       <div className="space-y-1.5">
@@ -1409,7 +1568,7 @@ function Auth() {
                           required
                         />
                         <p className="text-[11px] text-slate-400 font-mono leading-relaxed mt-1">
-                          Enter the unique Party Code given to you by your Squad Leader. Teammates enter their team dashboard directly without having to register or login with a password.
+                          Enter the unique Party Code given to you by your Squad Leader to access your dashboard directly.
                         </p>
                         {partyCodeError && (
                           <p className="text-xs text-red-400 font-mono mt-1">
@@ -1426,13 +1585,13 @@ function Auth() {
 
                       <div className="text-center pt-2 border-t border-slate-800/60 mt-4 space-y-1.5">
                         <p className="text-xs text-slate-400 font-mono">
-                          Have leader credentials?{' '}
+                          Have email access?{' '}
                           <button
                             type="button"
-                            onClick={() => setLoginTab('credentials')}
+                            onClick={() => setLoginTab('otp')}
                             className="text-tactical hover:underline uppercase font-bold ml-1"
                           >
-                            Sign In with Password
+                            Sign In with OTP
                           </button>
                         </p>
                         <p className="text-xs text-slate-500 font-mono">
@@ -1454,119 +1613,6 @@ function Auth() {
           </div>
         </section>
       </main>
-
-      {/* ───────────────────────────────────────────────────────────── */}
-      {/* FORGOT PASSWORD / HELPDESK RECOVERY MODAL                     */}
-      {/* ───────────────────────────────────────────────────────────── */}
-      {showForgotModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-[#0a0d17] border border-tactical/40 rounded-2xl p-6 sm:p-7 shadow-[0_0_40px_rgba(255,184,0,0.15)] relative space-y-4 font-mono">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-tactical animate-pulse" />
-                <span className="font-arcade text-xs text-white tracking-wider">
-                  LOST CREDENTIALS // OPS DESK
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowForgotModal(false)}
-                className="w-7 h-7 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-xs transition"
-              >
-                ✕
-              </button>
-            </div>
-
-            {!forgotSubmitted ? (
-              <form
-                onSubmit={async (e) => {
-                  e.preventDefault()
-                  if (!forgotEmail) return
-                  setForgotLoading(true)
-                  try {
-                    const res = await requestPasswordResetApi(forgotEmail)
-                    setForgotMsg(res?.message || 'Password reset request registered.')
-                    setForgotSubmitted(true)
-                  } catch (err) {
-                    setForgotMsg('Request submitted to Admin Desk.')
-                    setForgotSubmitted(true)
-                  } finally {
-                    setForgotLoading(false)
-                  }
-                }}
-                className="space-y-4"
-              >
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  Lost your password? Enter your registered email address. The Admin Command Vault will locate your profile and reset your password.
-                </p>
-
-                <div className="space-y-1">
-                  <label className={labelClass}>Registered Account Email *</label>
-                  <input
-                    type="email"
-                    placeholder="leader@gmail.com"
-                    value={forgotEmail}
-                    onChange={(e) => setForgotEmail(e.target.value)}
-                    className={inputClass}
-                    required
-                  />
-                </div>
-
-                <div className="p-3 rounded-xl bg-[#0f1424] border border-slate-800 text-[11px] text-slate-400 space-y-1">
-                  <div className="text-tactical font-bold text-[10px] uppercase">Direct Ops Helpline</div>
-                  <div>📞 Phone / WhatsApp: <a href="https://wa.me/919772316648" target="_blank" rel="noreferrer" className="text-cyan-400 hover:underline">+91 97723 16648</a></div>
-                  <div>✉️ Email: <a href="mailto:support@codefiesta.in" className="text-cyan-400 hover:underline">support@codefiesta.in</a></div>
-                  <div>📍 On-Ground Desk: GIT Central Control Room (Main Entrance)</div>
-                </div>
-
-                <div className="flex gap-2.5 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setShowForgotModal(false)}
-                    className="flex-1 px-4 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs uppercase font-bold transition"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={forgotLoading}
-                    className="flex-1 btn-ribbed bg-tactical text-black text-xs uppercase font-bold py-2.5 rounded-lg shadow disabled:opacity-50"
-                  >
-                    {forgotLoading ? 'Submitting...' : 'Submit Request >>'}
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <div className="space-y-4 text-center py-2">
-                <div className="w-12 h-12 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 flex items-center justify-center text-xl mx-auto">
-                  ✓
-                </div>
-                <div>
-                  <h3 className="font-arcade text-xs text-white">REQUEST TRANSMITTED TO OPS</h3>
-                  <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                    {forgotMsg}
-                  </p>
-                  <p className="text-[11px] text-slate-400 mt-2">
-                    Our admin desk is actively monitoring. You can connect with the helpdesk on WhatsApp at <strong className="text-tactical">+91 97723 16648</strong> for instant password generation.
-                  </p>
-                </div>
-
-                <div className="flex justify-center pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowForgotModal(false)}
-                    className="px-6 py-2.5 rounded-lg bg-tactical text-black font-arcade text-[10px] uppercase font-bold"
-                  >
-                    Back to Login
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
-
-export default Auth

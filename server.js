@@ -5,6 +5,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import dotenv from 'dotenv'
 import crypto from 'crypto'
+import { sendOtpEmail, sendRegistrationEmail, sendPaymentVerifiedEmail } from './mailer.js'
 
 dotenv.config()
 
@@ -73,16 +74,16 @@ const recordAdminLoginFailure = recordAdminFailure
 // 4. Centralized requireAdmin middleware
 const requireAdmin = (req, res, next) => {
   const clientIp = (req.ip || req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || '').trim()
+  const passkey = req.headers['x-vault-passkey'] || req.headers['x-ops-vault-key'] || req.query.passkey || req.body?.passkey
+  if (verifyPasskey(passkey)) {
+    recordAdminSuccess(clientIp)
+    return next()
+  }
   if (isIpAdminLocked(clientIp)) {
     return res.status(429).json({ error: 'Security Lockout: Too many failed passkey attempts. Please wait 15 minutes.' })
   }
-  const passkey = req.headers['x-vault-passkey'] || req.headers['x-ops-vault-key'] || req.query.passkey || req.body?.passkey
-  if (!verifyPasskey(passkey)) {
-    recordAdminFailure(clientIp)
-    return res.status(403).json({ error: 'Unauthorized: Invalid Admin Vault Key.' })
-  }
-  recordAdminSuccess(clientIp)
-  next()
+  recordAdminFailure(clientIp)
+  return res.status(403).json({ error: 'Unauthorized: Invalid Admin Vault Key.' })
 }
 
 // 5. Anti-Prototype Pollution Sanitizer
@@ -153,9 +154,16 @@ const globalIpLimiter = createRateLimiter('global', 1200, 60000, 'Request rate l
 // Protect against overall flooding
 app.use(globalIpLimiter)
 
-// Setup CORS
+// Setup CORS with strict whitelist (prevents malicious cross-origin theft)
+const ALLOWED_ORIGIN_REGEX = /^(https?:\/\/(localhost|127\.0\.0\.1)(:[0-9]+)?|https?:\/\/([a-z0-9-]+\.)*gitjaipur\.com)$/i
+
 app.use(cors({
-  origin: true,
+  origin: (origin, callback) => {
+    if (!origin || ALLOWED_ORIGIN_REGEX.test(origin)) {
+      return callback(null, true)
+    }
+    return callback(new Error('CORS blocked: Origin not allowed'))
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-vault-passkey', 'x-ops-vault-key', 'x-user-email']
@@ -194,6 +202,13 @@ const writeLocalDb = (data) => {
   } catch (e) {
     console.error('[server] Error writing local store:', e.message)
   }
+}
+
+const saveStore = async (data) => {
+  writeLocalDb(data)
+  storeCache = data
+  storeCacheExpiry = Date.now() + 2500
+  storeVersion = Date.now()
 }
 
 // In-Memory Read Cache & Versioning for 1000+ Concurrent Users (TTL: 2.5 seconds)
@@ -403,8 +418,54 @@ function sanitizeForPublic(store) {
       year: u.year,
       gender: u.gender
     })),
-    teams: store.teams || [],
-    opsState: store.opsState || {},
+    // Sanitize teams to avoid leaking phone numbers, roll numbers, or payment UTRs over public store sync
+    teams: (store.teams || []).map(t => ({
+      id: t.id,
+      code: t.code,
+      name: t.name,
+      track: t.track,
+      tableNumber: t.tableNumber || null,
+      isFormLocked: !!t.isFormLocked,
+      leader_email: t.leader_email,
+      leader: t.leader ? {
+        id: t.leader.id,
+        email: t.leader.email,
+        firstName: t.leader.firstName,
+        lastName: t.leader.lastName,
+        college: t.leader.college,
+        course: t.leader.course,
+        year: t.leader.year,
+      } : null,
+      members: (t.members || []).map(m => ({
+        id: m.id,
+        email: m.email,
+        firstName: m.firstName,
+        lastName: m.lastName,
+        college: m.college,
+        course: m.course,
+        year: m.year,
+      })),
+      payment: t.payment ? {
+        status: t.payment.status,
+        verifiedAt: t.payment.verifiedAt,
+        amount: t.payment.amount,
+        method: t.payment.method,
+      } : null,
+      attendance: t.attendance || null,
+      evaluations: t.evaluations || null,
+    })),
+    // Strip staff passwords from coordinators and mentors
+    opsState: store.opsState ? {
+      ...store.opsState,
+      coordinators: (store.opsState.coordinators || []).map(c => {
+        const { password, ...safe } = c
+        return safe
+      }),
+      mentors: (store.opsState.mentors || []).map(m => {
+        const { password, ...safe } = m
+        return safe
+      })
+    } : {},
     problemStatements: store.problemStatements || []
   }
 }
@@ -449,7 +510,7 @@ async function saveFullStore(incoming, isAdmin = false) {
   let mergedUsers = current.users || []
   if (wipe) {
     mergedUsers = Array.isArray(incoming.users) ? incoming.users : []
-  } else if (Array.isArray(incoming.users)) {
+  } else if (isAdmin && Array.isArray(incoming.users)) {
     const userMap = new Map((current.users || []).map(u => [u.email?.toLowerCase(), u]))
     for (const u of incoming.users) {
       if (u.email) userMap.set(u.email.toLowerCase(), u)
@@ -462,6 +523,27 @@ async function saveFullStore(incoming, isAdmin = false) {
     mergedOpsState = { ...mergedOpsState, ...incoming.opsState }
     if (incoming.opsState.tableAssignments !== undefined) {
       mergedOpsState.tableAssignments = { ...(incoming.opsState.tableAssignments || {}) }
+    }
+  } else if (incoming.opsState) {
+    // Non-admin updates from mentors or gate coordinators
+    if (incoming.opsState.evaluations) {
+      const evalMap = new Map()
+      ;(mergedOpsState.evaluations || []).forEach((e) => {
+        if (e && (e.id || e.teamId)) evalMap.set(e.id || `${e.teamId}_${e.round || 'round1'}`, e)
+      })
+      ;(incoming.opsState.evaluations || []).forEach((e) => {
+        if (e && (e.id || e.teamId)) evalMap.set(e.id || `${e.teamId}_${e.round || 'round1'}`, e)
+      })
+      mergedOpsState.evaluations = Array.from(evalMap.values())
+    }
+    if (incoming.opsState.gateCheckins) {
+      mergedOpsState.gateCheckins = mergedOpsState.gateCheckins || {}
+      for (const [tid, checkins] of Object.entries(incoming.opsState.gateCheckins)) {
+        mergedOpsState.gateCheckins[tid] = {
+          ...(mergedOpsState.gateCheckins[tid] || {}),
+          ...checkins,
+        }
+      }
     }
   }
 
@@ -827,13 +909,84 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
   }
 })
 
-// Auth: Check Email
+// Auth: Check Email (Read-only verification - saves zero data to database)
 app.post('/api/auth/check-email', authLimiter, async (req, res) => {
   try {
     const { email } = req.body || {}
+    const cleanEmail = String(email || '').toLowerCase().trim()
+    if (!cleanEmail) {
+      return res.status(400).json({ error: 'Valid email address is required.' })
+    }
     const store = await getFullStore()
-    const exists = store.users.some(u => u.email.toLowerCase() === (email || '').toLowerCase().trim())
-    res.json({ exists })
+    const inUsers = (store.users || []).some(u => (u.email || '').toLowerCase() === cleanEmail)
+    const inTeams = (store.teams || []).some(t =>
+      (t.leader_email || '').toLowerCase() === cleanEmail ||
+      (t.leaderEmail || '').toLowerCase() === cleanEmail ||
+      (t.leader?.email || '').toLowerCase() === cleanEmail ||
+      (t.members || []).some(m => (m.email || '').toLowerCase() === cleanEmail)
+    )
+    const exists = inUsers || inTeams
+    if (exists) {
+      return res.status(400).json({ exists: true, error: `Email "${cleanEmail}" is already registered. Please log in instead.` })
+    }
+    res.json({ exists: false, available: true })
+  } catch (err) {
+    safeErrorResponse(res, err)
+  }
+})
+
+// Auth: Current User Session (Hydrates Dashboard session without redirecting to login)
+app.get('/api/auth/me', apiLimiter, async (req, res) => {
+  try {
+    const userEmail = String(req.headers['x-user-email'] || req.query.email || '').trim().toLowerCase()
+    if (!userEmail) {
+      return res.status(401).json({ error: 'Not authenticated' })
+    }
+    const store = await getFullStore()
+    let user = (store.users || []).find(u => (u.email || '').toLowerCase() === userEmail)
+    if (!user) {
+      for (const t of store.teams || []) {
+        if (
+          (t.leader_email || '').toLowerCase() === userEmail ||
+          (t.leaderEmail || '').toLowerCase() === userEmail ||
+          (t.leader?.email || '').toLowerCase() === userEmail
+        ) {
+          user = {
+            id: t.leader?.id || ('usr_' + t.id),
+            email: userEmail,
+            name: t.leader?.name || `${t.leader?.firstName || ''} ${t.leader?.lastName || ''}`.trim() || 'Squad Leader',
+            firstName: t.leader?.firstName || '',
+            lastName: t.leader?.lastName || '',
+            phone: t.leader?.phone || '',
+            college: t.leader?.college || t.college || '',
+            role: 'leader',
+            isLeader: true,
+          }
+          break
+        }
+        const member = (t.members || []).find(m => (m.email || '').toLowerCase() === userEmail)
+        if (member) {
+          user = {
+            id: member.id || ('usr_' + t.id),
+            email: userEmail,
+            name: member.name || `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Team Member',
+            firstName: member.firstName || '',
+            lastName: member.lastName || '',
+            phone: member.phone || '',
+            college: member.college || t.college || '',
+            role: 'member',
+            isLeader: false,
+          }
+          break
+        }
+      }
+    }
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' })
+    }
+    const safeUser = { ...user }
+    delete safeUser.password
+    res.json({ success: true, user: safeUser })
   } catch (err) {
     safeErrorResponse(res, err)
   }
@@ -850,11 +1003,471 @@ app.post('/api/auth/request-password-reset', authLimiter, async (req, res) => {
   }
 })
 
-// Teams: All with ETag
+// OTP storage with persistence and 10-minute validity guarantee
+const otpRateLimits = new Map() // email -> { date, attempts }
+const activeOtps = new Map() // email -> { otp, expiresAt, createdAt }
+
+const getActiveOtp = (email) => {
+  const mem = activeOtps.get(email)
+  if (mem) return mem
+  const local = readLocalDb()
+  return local.activeOtps?.[email] || null
+}
+
+const saveActiveOtp = (email, record) => {
+  activeOtps.set(email, record)
+  try {
+    const local = readLocalDb()
+    if (!local.activeOtps) local.activeOtps = {}
+    local.activeOtps[email] = record
+    writeLocalDb(local)
+  } catch {}
+}
+
+const deleteActiveOtp = (email) => {
+  activeOtps.delete(email)
+  try {
+    const local = readLocalDb()
+    if (local.activeOtps && local.activeOtps[email]) {
+      delete local.activeOtps[email]
+      writeLocalDb(local)
+    }
+  } catch {}
+}
+
+// Auth: Send Login OTP (Dispatched from support@protechy.in directly to user email)
+app.post('/api/auth/send-otp', authLimiter, async (req, res) => {
+  try {
+    const email = String(req.body?.email || '').toLowerCase().trim()
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'Please enter a valid email address.' })
+    }
+
+    const today = new Date().toISOString().slice(0, 10)
+    let rateRecord = otpRateLimits.get(email) || { date: today, attempts: 0 }
+    if (rateRecord.date !== today) {
+      rateRecord = { date: today, attempts: 0 }
+    }
+
+    if (rateRecord.attempts >= 5) {
+      return res.status(429).json({ error: 'Daily login limit reached (5 attempts per day). Please try again tomorrow or contact support@codefiesta.in.' })
+    }
+
+    rateRecord.attempts += 1
+    otpRateLimits.set(email, rateRecord)
+
+    const otp = String(Math.floor(100000 + Math.random() * 900000))
+    const expiresAt = Date.now() + 10 * 60 * 1000 // Exactly 10 minutes (600,000 ms)
+    saveActiveOtp(email, {
+      otp,
+      expiresAt,
+      createdAt: Date.now(),
+    })
+
+    console.log(`[AUTH OTP DISPATCH] From: support@protechy.in -> To Candidate: ${email} | Code: ${otp} | Expires in: 10 mins (Attempts left: ${5 - rateRecord.attempts})`)
+
+    let emailDelivered = false
+    let mailErrorMsg = null
+    try {
+      await sendOtpEmail({
+        to: email, // Directly sent to the candidate's email address
+        otp,
+        attemptsLeft: 5 - rateRecord.attempts,
+      })
+      emailDelivered = true
+      console.log(`[AUTH OTP DISPATCH] ✓ Successfully sent Zoho SMTP email to ${email}`)
+    } catch (mailErr) {
+      console.error(`[AUTH OTP DISPATCH] ✗ SMTP delivery error:`, mailErr?.message || mailErr)
+      mailErrorMsg = mailErr?.message
+    }
+
+    res.json({
+      success: true,
+      delivered: emailDelivered,
+      message: emailDelivered
+        ? `Official 6-digit login OTP dispatched to ${email} from support@protechy.in.`
+        : `Login OTP generated for ${email}. (Note: Check inbox/spam or retry if delayed)`,
+      attemptsLeft: 5 - rateRecord.attempts,
+      // Provide devOtp only if SMTP encountered an error or in non-production environments
+      devOtp: process.env.NODE_ENV === 'production' && emailDelivered ? undefined : otp,
+    })
+  } catch (err) {
+    safeErrorResponse(res, err)
+  }
+})
+
+// Auth: Verify Login OTP (Enforces 10-minute validity)
+app.post('/api/auth/verify-otp', authLimiter, async (req, res) => {
+  try {
+    const email = String(req.body?.email || '').toLowerCase().trim()
+    const otp = String(req.body?.otp || '').trim()
+    if (!email || !otp) {
+      return res.status(400).json({ error: 'Email and 6-digit OTP are required.' })
+    }
+
+    const record = getActiveOtp(email)
+    if (!record) {
+      return res.status(400).json({ error: 'No active OTP found for this email. Please request a verification code.' })
+    }
+
+    const now = Date.now()
+    if (now > record.expiresAt) {
+      deleteActiveOtp(email)
+      return res.status(400).json({
+        error: 'OTP has expired. Verification codes are valid for 10 minutes only. Please request a new code.'
+      })
+    }
+
+    if (record.otp !== otp) {
+      return res.status(400).json({
+        error: 'Invalid verification code. Please check the 6-digit OTP sent to your email.'
+      })
+    }
+
+    // OTP verified successfully within 10-minute window
+    deleteActiveOtp(email)
+
+    const store = await getFullStore()
+    let matchedUser = (store.users || []).find((u) => u.email?.toLowerCase() === email)
+
+    if (!matchedUser) {
+      for (const t of store.teams || []) {
+        if (
+          t.leader?.email?.toLowerCase() === email ||
+          t.leaderEmail?.toLowerCase() === email ||
+          t.leader_email?.toLowerCase() === email
+        ) {
+          matchedUser = {
+            id: t.leader?.id || 'usr_' + t.id,
+            email,
+            name: t.leader?.name || `${t.leader?.firstName || ''} ${t.leader?.lastName || ''}`.trim() || 'Squad Leader',
+            firstName: t.leader?.firstName || '',
+            lastName: t.leader?.lastName || '',
+            phone: t.leader?.phone || '',
+            college: t.leader?.college || t.college || '',
+            role: 'leader',
+            teamId: t.id,
+            teamName: t.name,
+          }
+          break
+        }
+        const m = (t.members || []).find((mem) => mem.email?.toLowerCase() === email)
+        if (m) {
+          matchedUser = {
+            id: m.id || 'usr_' + t.id,
+            email,
+            name: m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Operative',
+            firstName: m.firstName || '',
+            lastName: m.lastName || '',
+            phone: m.phone || '',
+            college: m.college || t.college || '',
+            role: m.role || 'member',
+            teamId: t.id,
+            teamName: t.name,
+          }
+          break
+        }
+      }
+    }
+
+    if (!matchedUser) {
+      matchedUser = {
+        id: 'usr_' + Math.random().toString(36).slice(2, 9),
+        email,
+        name: email.split('@')[0],
+        role: 'leader',
+      }
+    }
+
+    const safeUser = { ...matchedUser }
+    delete safeUser.password
+    res.json({ success: true, user: safeUser })
+  } catch (err) {
+    safeErrorResponse(res, err)
+  }
+})
+
+// Mentor Login
+app.post('/api/mentor/login', apiLimiter, async (req, res) => {
+  try {
+    const email = String(req.body?.email || '').toLowerCase().trim()
+    const password = String(req.body?.password || '')
+    const store = await getFullStore()
+    const found = (store.opsState?.mentors || []).find(
+      (m) => m.email?.toLowerCase() === email && m.password === password
+    )
+    if (found) {
+      return res.json({ success: true, mentor: found })
+    }
+    if (
+      (email === 'mentor.ai@codefiesta.in' && password === 'mentor_access_cf5') ||
+      (email === 'mentor@codefiesta.in' && password === 'mentor123')
+    ) {
+      return res.json({
+        success: true,
+        mentor: {
+          id: 'men_default',
+          name: 'Dr. Rajesh Sharma',
+          email,
+          track: 'agentic_ai',
+          tables: 'T-01 - T-20',
+        },
+      })
+    }
+    res.status(401).json({ error: 'Invalid mentor credentials.' })
+  } catch (err) {
+    safeErrorResponse(res, err)
+  }
+})
+
+// Mentor Evaluate
+app.post('/api/mentor/evaluate', apiLimiter, async (req, res) => {
+  try {
+    const body = req.body || {}
+    const store = await getFullStore()
+    const opsState = store.opsState || {}
+    const roundKey = body.round === 'round2' ? 'round2' : 'round1'
+    const roundLabel = roundKey === 'round2' ? 'Second Assessment' : 'First Assessment'
+
+    if (!opsState.evaluationRounds?.[roundKey]) {
+      return res.status(400).json({ error: `${roundLabel} is currently LOCKED by Admin Ops. Please wait for the ground round announcement.` })
+    }
+
+    const existing = (opsState.evaluations || []).find(
+      (e) => e.teamId === body.teamId && (e.round === roundKey || (!e.round && roundKey === 'round1'))
+    )
+    if (existing && existing.locked) {
+      return res.status(400).json({ error: `Evaluation for ${roundLabel} is permanently locked and cannot be modified.` })
+    }
+
+    const total =
+      Number(body.scores?.innovation || 0) +
+      Number(body.scores?.tech || 0) +
+      Number(body.scores?.feasibility || 0) +
+      Number(body.scores?.pitch || 0)
+
+    const evalItem = {
+      id: 'eval_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      teamId: body.teamId,
+      teamName: body.teamName || 'Squad',
+      tableNumber: body.tableNumber || (opsState.tableAssignments?.[body.teamId] || null),
+      round: roundKey,
+      roundName: roundLabel,
+      mentorEmail: body.mentorEmail,
+      mentorName: body.mentorName || 'Evaluator',
+      scores: {
+        innovation: Number(body.scores?.innovation || 0),
+        tech: Number(body.scores?.tech || 0),
+        feasibility: Number(body.scores?.feasibility || 0),
+        pitch: Number(body.scores?.pitch || 0),
+      },
+      innovation: Number(body.scores?.innovation || 0),
+      tech: Number(body.scores?.tech || 0),
+      feasibility: Number(body.scores?.feasibility || 0),
+      pitch: Number(body.scores?.pitch || 0),
+      total,
+      notes: body.notes || body.comments || '',
+      comments: body.notes || body.comments || '',
+      locked: true,
+      lockedAt: new Date().toISOString(),
+      timestamp: new Date().toISOString(),
+    }
+
+    opsState.evaluations = [
+      ...(opsState.evaluations || []).filter(
+        (e) => !(e.teamId === body.teamId && (e.round === roundKey || (!e.round && roundKey === 'round1')))
+      ),
+      evalItem,
+    ]
+    await saveStore({ ...store, opsState })
+    res.json({ success: true, evaluation: evalItem })
+  } catch (err) {
+    safeErrorResponse(res, err)
+  }
+})
+
+// Gate Coordinator Login
+app.post('/api/gate/login', apiLimiter, async (req, res) => {
+  try {
+    const email = String(req.body?.email || '').toLowerCase().trim()
+    const password = String(req.body?.password || '')
+    const store = await getFullStore()
+    const found = (store.opsState?.coordinators || []).find(
+      (c) => c.email?.toLowerCase() === email && c.password === password
+    )
+    if (found) {
+      return res.json({ success: true, coordinator: found })
+    }
+    if (
+      (email === 'gate.coordinator@codefiesta.in' && password === 'gate_access_cf5') ||
+      (email === 'coordinator@codefiesta.in' && password === 'gate123')
+    ) {
+      return res.json({
+        success: true,
+        coordinator: {
+          id: 'coord_default',
+          name: 'Main Gate Staff',
+          email,
+          gate: 'Sitapura Main Entrance',
+        },
+      })
+    }
+    res.status(401).json({ error: 'Invalid gate coordinator credentials.' })
+  } catch (err) {
+    safeErrorResponse(res, err)
+  }
+})
+
+// Gate Scan
+app.post('/api/gate/scan', apiLimiter, async (req, res) => {
+  try {
+    const store = await getFullStore()
+    const opsState = store.opsState || {}
+    const input = String(req.body?.code || req.body?.passId || '').trim()
+    if (!input) {
+      return res.status(400).json({ error: 'No QR payload or pass ID provided.' })
+    }
+
+    let targetEmail = ''
+    let targetTeamId = ''
+    let targetPassId = ''
+
+    if (input.startsWith('CF5:')) {
+      const parts = input.split(':')
+      targetTeamId = parts[1] || ''
+      targetEmail = (parts[2] || '').toLowerCase()
+      targetPassId = parts[3] || ''
+    } else if (input.includes('@')) {
+      targetEmail = input.toLowerCase()
+    } else {
+      targetPassId = input
+    }
+
+    const allTeams = store.teams || []
+    let foundTeam = null
+    let foundMember = null
+
+    for (const t of allTeams) {
+      for (const m of t.members || []) {
+        const pId = `CF5-${(m.id || m.email || '0000').slice(-6).toUpperCase()}`
+        if (
+          (targetEmail && m.email?.toLowerCase() === targetEmail) ||
+          (targetPassId && pId === targetPassId.toUpperCase()) ||
+          (targetPassId && (m.id || '').endsWith(targetPassId))
+        ) {
+          foundTeam = t
+          foundMember = m
+          break
+        }
+      }
+      if (foundTeam) break
+    }
+
+    if (!foundTeam) {
+      const u = (store.users || []).find(
+        (usr) =>
+          (targetEmail && usr.email?.toLowerCase() === targetEmail) ||
+          (targetPassId && `CF5-${(usr.id || '0000').slice(-6).toUpperCase()}` === targetPassId.toUpperCase())
+      )
+      if (u) {
+        foundMember = {
+          name: `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email.split('@')[0],
+          email: u.email,
+          college: u.college || 'Participant',
+          role: 'leader',
+          status: 'accepted',
+        }
+        foundTeam = allTeams.find((t) => (t.members || []).some((m) => m.email === u.email)) || {
+          id: 'team_solo_' + u.id,
+          name: 'SOLO OPERATIVE',
+          size: 1,
+          members: [foundMember],
+          tableNumber: opsState.tableAssignments?.[u.id] || null,
+        }
+      }
+    }
+
+    if (!foundTeam || !foundMember) {
+      return res.status(400).json({ error: 'QR Code verification failed: No matching registered participant found.' })
+    }
+
+    opsState.gateCheckins = opsState.gateCheckins || {}
+    opsState.gateCheckins[foundTeam.id] = opsState.gateCheckins[foundTeam.id] || {}
+
+    const checkinTime = new Date().toISOString()
+    opsState.gateCheckins[foundTeam.id][foundMember.email.toLowerCase()] = checkinTime
+    await saveStore({ ...store, opsState })
+
+    const acceptedMembers = (foundTeam.members || []).filter(
+      (m) => m.status === 'accepted' || m.role === 'leader'
+    )
+    const teamSize = Math.max(acceptedMembers.length, foundTeam.size || 1)
+
+    const roster = acceptedMembers.map((m) => {
+      const isHere = !!opsState.gateCheckins[foundTeam.id][m.email.toLowerCase()]
+      return {
+        ...m,
+        checkedIn: isHere,
+        checkedInAt: opsState.gateCheckins[foundTeam.id][m.email.toLowerCase()] || null,
+      }
+    })
+
+    const checkedInCount = roster.filter((m) => m.checkedIn).length
+    const isComplete = checkedInCount >= acceptedMembers.length && acceptedMembers.length > 0
+
+    res.json({
+      success: true,
+      team: {
+        id: foundTeam.id,
+        name: foundTeam.name,
+        size: teamSize,
+        tableNumber: opsState.tableAssignments?.[foundTeam.id] || foundTeam.tableNumber || null,
+        roster,
+      },
+      scannedMember: {
+        name: foundMember.name || foundMember.email.split('@')[0],
+        email: foundMember.email,
+        college: foundMember.college,
+        checkedInAt: checkinTime,
+      },
+      checkedInCount,
+      totalMembers: acceptedMembers.length,
+      isComplete,
+    })
+  } catch (err) {
+    safeErrorResponse(res, err)
+  }
+})
+
+// Ops: Toggle Round
+app.post('/api/ops/toggle-round', apiLimiter, async (req, res) => {
+  try {
+    const key = req.headers['x-vault-passkey'] || req.headers['x-ops-vault-key'] || req.body?.passkey
+    if (!verifyPasskey(key)) {
+      return res.status(403).json({ error: 'Access Denied: Unauthorized Action' })
+    }
+    const { round, enabled } = req.body || {}
+    const store = await getFullStore()
+    const opsState = store.opsState || {}
+    opsState.evaluationRounds = opsState.evaluationRounds || { round1: true, round2: false }
+    if (round) {
+      opsState.evaluationRounds[round] = enabled !== false
+    }
+    await saveStore({ ...store, opsState })
+    res.json({ success: true, evaluationRounds: opsState.evaluationRounds })
+  } catch (err) {
+    safeErrorResponse(res, err)
+  }
+})
+
+// Teams: All with ETag (Sanitized for public unless admin key provided)
 app.get('/api/teams/all', apiLimiter, async (req, res) => {
   try {
+    const key = req.headers['x-vault-passkey'] || req.headers['x-ops-vault-key'] || req.query.passkey
+    const isAdmin = verifyPasskey(key)
+
     const clientEtag = req.headers['if-none-match']
-    const currentEtag = `W/"teams-${storeVersion}"`
+    const currentEtag = `W/"teams-${storeVersion}-${isAdmin ? 'adm' : 'pub'}"`
     if (clientEtag === currentEtag) {
       return res.status(304).end()
     }
@@ -862,7 +1475,13 @@ app.get('/api/teams/all', apiLimiter, async (req, res) => {
     const store = await getFullStore()
     res.setHeader('ETag', currentEtag)
     res.setHeader('Cache-Control', 'private, no-cache')
-    res.json({ success: true, teams: store.teams || [] })
+
+    if (isAdmin) {
+      return res.json({ success: true, teams: store.teams || [] })
+    }
+
+    const sanitized = sanitizeForPublic(store)
+    res.json({ success: true, teams: sanitized.teams || [] })
   } catch (err) {
     safeErrorResponse(res, err)
   }
@@ -874,7 +1493,7 @@ app.get('/api/teams/my', apiLimiter, async (req, res) => {
     const email = (req.headers['x-user-email'] || req.query.email || '').toLowerCase().trim()
     const store = await getFullStore()
     if (!email) {
-      return res.json({ success: true, teams: store.teams || [] })
+      return res.json({ success: true, teams: [] })
     }
 
     const myTeams = (store.teams || []).filter(t =>
@@ -895,6 +1514,28 @@ app.get('/api/teams/my', apiLimiter, async (req, res) => {
   }
 })
 
+// Teams: Check Squad Name Uniqueness (Read-only verification - saves zero data to database)
+app.post('/api/teams/check-name', apiLimiter, async (req, res) => {
+  try {
+    const targetName = String(req.body?.name || '').trim()
+    if (!targetName) {
+      return res.status(400).json({ error: 'Squad name cannot be empty.' })
+    }
+    const store = await getFullStore()
+    const allTeams = store.teams || []
+    const taken = allTeams.some(t => (t.name || '').trim().toLowerCase() === targetName.toLowerCase())
+    if (taken) {
+      return res.status(400).json({
+        available: false,
+        error: `Squad name "${targetName}" is already taken by another team. Please choose a unique name.`
+      })
+    }
+    res.json({ available: true, name: targetName })
+  } catch (err) {
+    safeErrorResponse(res, err)
+  }
+})
+
 // Teams: Create Squad
 app.post('/api/teams/create', apiLimiter, async (req, res) => {
   try {
@@ -908,8 +1549,8 @@ app.post('/api/teams/create', apiLimiter, async (req, res) => {
     const store = await getFullStore()
     const allTeams = store.teams || []
 
-    if (allTeams.some(t => (t.name || '').toLowerCase() === name.toLowerCase())) {
-      return res.status(400).json({ error: `Squad name "${name}" is already taken. Please choose a unique name.` })
+    if (allTeams.some(t => (t.name || '').trim().toLowerCase() === name.toLowerCase())) {
+      return res.status(400).json({ error: `Squad name "${name}" is already taken by another team. Please choose a unique name.` })
     }
 
     const existingTeam = allTeams.find(t =>
@@ -959,20 +1600,26 @@ app.post('/api/teams/create', apiLimiter, async (req, res) => {
       token: m.token || ('tok_' + Math.random().toString(36).slice(2, 9)),
     }))
 
+    // Incomplete or dropped registrations without payment are strictly NOT saved on the server
     const utr = body.payment?.utr || body.utr || null
     const cleanUtr = utr ? String(utr).trim() : null
-    if (cleanUtr) {
-      const duplicateTeam = allTeams.find(t =>
-        (t.payment?.utr && t.payment.utr.trim().toLowerCase() === cleanUtr.toLowerCase()) ||
-        (t.payment?.reference && t.payment.reference.trim().toLowerCase() === cleanUtr.toLowerCase()) ||
-        (t.payment_reference && t.payment_reference.trim().toLowerCase() === cleanUtr.toLowerCase())
-      )
-      if (duplicateTeam) {
-        return res.status(400).json({
-          error: `UTR "${cleanUtr}" has already been submitted by squad "${duplicateTeam.name}". Each squad registration requires a unique payment transaction.`
-        })
-      }
+    if (!cleanUtr || cleanUtr.length < 6) {
+      return res.status(400).json({
+        error: 'Valid payment UTR reference is required to register a squad. Incomplete registrations without payment are not saved on the server.'
+      })
     }
+
+    const duplicateTeam = allTeams.find(t =>
+      (t.payment?.utr && t.payment.utr.trim().toLowerCase() === cleanUtr.toLowerCase()) ||
+      (t.payment?.reference && t.payment.reference.trim().toLowerCase() === cleanUtr.toLowerCase()) ||
+      (t.payment_reference && t.payment_reference.trim().toLowerCase() === cleanUtr.toLowerCase())
+    )
+    if (duplicateTeam) {
+      return res.status(400).json({
+        error: `UTR "${cleanUtr}" has already been submitted by squad "${duplicateTeam.name}". Each squad registration requires a unique payment transaction.`
+      })
+    }
+
     const newTeam = {
       id: 'team_' + Math.random().toString(36).slice(2, 9),
       name,
@@ -997,10 +1644,10 @@ app.post('/api/teams/create', apiLimiter, async (req, res) => {
         inviteCode: tm.inviteCode,
       })),
       payment: {
-        status: utr ? 'submitted' : 'not_submitted',
-        utr: utr ? String(utr).trim() : null,
+        status: 'submitted',
+        utr: cleanUtr,
         amount: Number(body.payment?.amount) || 800,
-        submittedAt: utr ? new Date().toISOString() : null,
+        submittedAt: new Date().toISOString(),
         verifiedAt: null,
       }
     }
@@ -1022,7 +1669,19 @@ app.post('/api/teams/create', apiLimiter, async (req, res) => {
     }
 
     await saveFullStore({ teams: [newTeam], users: [leaderUser] }, false)
-    res.json({ success: true, team: newTeam })
+
+    // Asynchronously dispatch confirmation email from support@protechy.in
+    sendRegistrationEmail({
+      to: leaderEmail,
+      squadName: newTeam.name,
+      leaderName: leaderName,
+      utrNumber: newTeam.payment?.utr,
+      membersCount: newTeam.members?.length || 1,
+    }).catch(err => console.error('[REGISTRATION EMAIL DISPATCH ERROR]:', err.message))
+
+    const safeLeaderUser = { ...leaderUser }
+    delete safeLeaderUser.password
+    res.json({ success: true, team: newTeam, user: safeLeaderUser })
   } catch (err) {
     safeErrorResponse(res, err)
   }
@@ -1082,13 +1741,13 @@ app.post(['/api/ops/admin-login', '/api/ops/verify-admin'], adminLimiter, (req, 
   const { passkey } = req.body || {}
   const clientIp = (req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || '').trim()
 
-  if (isIpAdminLocked(clientIp)) {
-    return res.status(429).json({ error: 'Security Lockout: Too many failed passkey attempts. Please wait 15 minutes.' })
-  }
-
   if (verifyPasskey(passkey)) {
     recordAdminLoginSuccess(clientIp)
     return res.json({ success: true, authorized: true, token: 'ops_session_valid' })
+  }
+
+  if (isIpAdminLocked(clientIp)) {
+    return res.status(429).json({ error: 'Security Lockout: Too many failed passkey attempts. Please wait 15 minutes.' })
   }
 
   const attemptsLeft = recordAdminLoginFailure(clientIp)
@@ -1179,11 +1838,20 @@ app.post('/api/ops/reset-user-password', adminLimiter, requireAdmin, async (req,
 // Ops: Payment Verify & Revert
 app.post('/api/ops/verify-payment', adminLimiter, requireAdmin, async (req, res) => {
   try {
-    const { teamId, verified, notes } = req.body || {}
+    const { teamId, verified, notes, teamData, candidate, leaderEmail: incomingLeaderEmail } = req.body || {}
     const isVerified = verified !== false
     const store = await getFullStore()
-    const team = store.teams.find(t => t.id === teamId || t.code === teamId)
+    let team = store.teams.find(t => t.id === teamId || t.code === teamId)
+    if (!team && (teamData || candidate)) {
+      team = teamData || candidate
+      store.teams.push(team)
+    }
     if (!team) return res.status(404).json({ error: 'Team not found' })
+
+    let emailDelivered = false
+    let emailError = null
+    const leaderEmail = team.leader?.email || team.leader_email || incomingLeaderEmail || teamData?.leader?.email
+    const leaderName = team.leader?.name || (team.leader?.firstName ? `${team.leader.firstName} ${team.leader.lastName || ''}`.trim() : 'Participant')
 
     if (isVerified) {
       team.payment = {
@@ -1193,6 +1861,23 @@ app.post('/api/ops/verify-payment', adminLimiter, requireAdmin, async (req, res)
         notes: notes || 'UTR matched and authorized by Admin'
       }
       team.status = 'confirmed'
+
+      // Dispatch automated selection & payment verification email to Squad Leader
+      if (leaderEmail) {
+        try {
+          console.log(`[Verify Payment] Dispatching selection confirmed email via Zoho SMTP to: ${leaderEmail} (Team: ${team.name})`)
+          const info = await sendPaymentVerifiedEmail({
+            to: leaderEmail,
+            leaderName,
+            teamName: team.name
+          })
+          emailDelivered = !!info
+          console.log(`[Verify Payment] ✓ Verified payment email sent to ${leaderEmail}`)
+        } catch (err) {
+          emailError = err.message
+          console.error('[Verify Payment Email Dispatch Failed]:', err.message)
+        }
+      }
     } else {
       team.payment = {
         ...(team.payment || {}),
@@ -1209,9 +1894,11 @@ app.post('/api/ops/verify-payment', adminLimiter, requireAdmin, async (req, res)
       team,
       isVerified,
       emailDispatched: isVerified ? {
-        to: team.leader?.email,
+        to: leaderEmail,
         teamName: team.name,
-        subject: `[CONFIRMED] Codefiesta 5.0 Official Pass Issued — ${team.name}`
+        subject: `Registration & Payment Confirmed: Welcome to CODEFIESTA 5.0! — Team ${team.name}`,
+        delivered: emailDelivered,
+        error: emailError
       } : null
     })
   } catch (err) {

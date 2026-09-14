@@ -250,7 +250,7 @@ export default function Dashboard() {
     problemStatementsReleased: false,
     announcements: [],
     tableAssignments: {},
-    evaluations: {},
+    evaluations: [],
   })
 
   useEffect(() => {
@@ -275,12 +275,34 @@ export default function Dashboard() {
     fetchMe()
       .then((data) => {
         if (!data?.user) {
+          try {
+            const raw = localStorage.getItem('cf_auth_user') || localStorage.getItem('cf_user')
+            if (raw) {
+              const parsed = JSON.parse(raw)
+              if (parsed?.email) {
+                setUser(parsed)
+                return
+              }
+            }
+          } catch {}
           navigate('/auth')
           return
         }
         setUser(data.user)
       })
-      .catch(() => navigate('/auth'))
+      .catch(() => {
+        try {
+          const raw = localStorage.getItem('cf_auth_user') || localStorage.getItem('cf_user')
+          if (raw) {
+            const parsed = JSON.parse(raw)
+            if (parsed?.email) {
+              setUser(parsed)
+              return
+            }
+          }
+        } catch {}
+        navigate('/auth')
+      })
       .finally(() => setChecked(true))
   }, [navigate])
 
@@ -435,28 +457,41 @@ export default function Dashboard() {
     return () => main.removeEventListener('scroll', handleScroll)
   }, [teams, user])
 
-  if (!checked || !user) {
+  if (!checked || !user || (loadingTeams && teams.length === 0)) {
     return (
       <div className="h-dvh w-full bg-[#07080e] flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 rounded border-2 border-tactical border-t-transparent animate-spin" />
           <span className="font-mono text-xs text-tactical tracking-widest uppercase font-bold">
-            INITIALIZING HUD...
+            INITIALIZING SQUAD HUD...
           </span>
         </div>
       </div>
     )
   }
 
-  const myTeam = teams.find((t) => t.members?.some((m) => m.email === user.email)) || teams[0] || null
-  const isLeader = myTeam ? myTeam.leader?.email === user.email || myTeam.isLeaderForThisTeam : false
+  const userEmail = String(user.email || '').toLowerCase().trim()
+  const myTeam = teams.find((t) =>
+    (t.leader_email || '').toLowerCase() === userEmail ||
+    (t.leaderEmail || '').toLowerCase() === userEmail ||
+    (t.leader?.email || '').toLowerCase() === userEmail ||
+    (t.members || []).some((m) => (m.email || '').toLowerCase() === userEmail)
+  ) || teams[0] || null
+
+  const isLeader = myTeam ? (myTeam.leader?.email || myTeam.leader_email || '').toLowerCase() === userEmail || myTeam.isLeaderForThisTeam : false
   const cleanExplicit = hackathonState.tableAssignments?.[myTeam?.id]
   const cleanTeamTable = myTeam?.tableNumber && myTeam.tableNumber !== 'T-14' && myTeam.tableNumber !== 'UNASSIGNED' ? myTeam.tableNumber : null
   const assignedTable = (cleanExplicit && cleanExplicit !== 'T-14' && cleanExplicit !== 'UNASSIGNED' ? cleanExplicit : cleanTeamTable) || null
-  const evaluation = (myTeam && hackathonState.evaluations?.[myTeam.id]) || myTeam?.evaluation || null
+  const evaluation =
+    (myTeam &&
+      (Array.isArray(hackathonState?.evaluations)
+        ? hackathonState.evaluations.find((e) => e.teamId === myTeam.id)
+        : hackathonState?.evaluations?.[myTeam.id])) ||
+    myTeam?.evaluation ||
+    null
 
-  // Strict Hard-Gating: Dashboard access is completely locked until admin reconciles UTR against bank records
-  const isPaymentPending = myTeam && myTeam.payment?.status !== 'verified'
+  // Strict Hard-Gating: Dashboard access is locked until admin reconciles UTR against bank records
+  const isPaymentPending = myTeam && (myTeam.payment?.status !== 'verified' || myTeam.status === 'pending_verification')
 
   if (isPaymentPending) {
     return (
@@ -1830,19 +1865,19 @@ function FirstTimeOnboarding({ user, onTeamCreated, onTeamJoined }) {
                   <div className="flex flex-col items-center justify-center">
                     <div className="bg-white p-3.5 rounded-xl shadow-2xl border-2 border-tactical/80">
                       <QRCodeSvg
-                        value="upi://pay?pa=git.codefiesta@upi&pn=Codefiesta%205.0&am=800&cu=INR"
+                        value="upi://pay?pa=Q073541130@ybl&pn=Codefiesta%205.0&am=800&cu=INR&tn=Codefiesta%205.0%20Registration"
                         size={170}
                       />
                     </div>
                     <div className="mt-3 flex items-center gap-2">
                       <span className="text-xs font-mono text-slate-300">
-                        UPI ID: <strong className="text-tactical">git.codefiesta@upi</strong>
+                        UPI ID: <strong className="text-tactical">Q073541130@ybl</strong>
                       </span>
                       <button
                         type="button"
                         onClick={async () => {
                           try {
-                            await navigator.clipboard.writeText('git.codefiesta@upi')
+                            await navigator.clipboard.writeText('Q073541130@ybl')
                             setCopiedUpi(true)
                             setTimeout(() => setCopiedUpi(false), 2000)
                           } catch {}
@@ -1853,7 +1888,7 @@ function FirstTimeOnboarding({ user, onTeamCreated, onTeamJoined }) {
                       </button>
                     </div>
                     <p className="text-[11px] text-slate-400 font-mono mt-1.5 max-w-sm">
-                      Scan with Google Pay, PhonePe, Paytm, or BHIM. Pay <strong>₹800</strong>, then enter the 12-digit UTR below.
+                      Scan with Google Pay, PhonePe, Paytm, or any UPI app. Pay <strong>₹800</strong>, then enter the 12-digit UTR below.
                     </p>
                   </div>
                 </div>
@@ -3080,8 +3115,10 @@ function ProblemTracksSection({ myTeam, isLeader, user, onTrackUpdated, problemS
 
 function OnGroundEvaluationLedger({ myTeam, user, assignedTable, evaluation, hackathonState }) {
   const cleanMyTeamTable = myTeam?.tableNumber && myTeam.tableNumber !== 'T-14' && myTeam.tableNumber !== 'UNASSIGNED' ? myTeam.tableNumber : null
-  const table = (assignedTable && assignedTable !== 'T-14' && assignedTable !== 'UNASSIGNED' ? assignedTable : cleanMyTeamTable) || null
-  const evaluationsList = hackathonState?.evaluations || []
+  const rawEvals = hackathonState?.evaluations
+  const evaluationsList = Array.isArray(rawEvals)
+    ? rawEvals
+    : (rawEvals && typeof rawEvals === 'object' ? Object.values(rawEvals) : [])
 
   const r1Eval = evaluationsList.find(
     (e) => e.teamId === myTeam?.id && (e.round === 'round1' || !e.round)

@@ -16,14 +16,20 @@ import { useRef, useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 const TIMELINE = [
-  { date: '8:00 AM',  title: 'Team Registration',  detail: 'Check in your squad, collect your badges, and get your workstations set up. The clock is already ticking.',                              color: '#00f5ff', image: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&q=80' },
-  { date: '10:00 AM', title: 'Opening Ceremony',    detail: 'Welcome address, sponsor introductions, and the official flag-off. Problem statements are revealed — let the hacking begin.',            color: '#a855f7', image: 'https://images.unsplash.com/photo-1475721027785-f74eccf877e2?w=800&q=80' },
-  { date: '11:00 AM', title: 'Hackathon Begins',    detail: 'Keyboards hot, ideas flowing. The 24-hour build sprint is live. Mentors are on standby.',                                                color: '#22d3ee', image: 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=800&q=80' },
-  { date: '2:00 PM',  title: 'Mentor Sessions',     detail: 'Round-robin expert consultations. Get your architecture reviewed, unblock bottlenecks, and sharpen your pitch.',                         color: '#f59e0b', image: 'https://images.unsplash.com/photo-1552664730-d307ca884978?w=800&q=80' },
-  { date: '4:00 PM',  title: 'Coffee Break',        detail: 'Fuel up. Step away from the screen, recharge, and come back stronger for the final push.',                                               color: '#fb923c', image: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=800&q=80' },
-  { date: '5:00 PM',  title: 'Workshop',            detail: 'Live deep-dive session on a high-impact tech topic. Integrate fresh knowledge directly into your project.',                               color: '#34d399', image: 'https://images.unsplash.com/photo-1531482615713-2afd69097998?w=800&q=80' },
-  { date: '9:00 PM',  title: 'Networking Session',  detail: 'Mingle with industry professionals, fellow hackers, and sponsors. Make connections that outlast the hackathon.',                         color: '#f43f5e', image: 'https://images.unsplash.com/photo-1511578314322-379afb476865?w=800&q=80' },
-  { date: '11:00 PM', title: 'Progress Check',      detail: 'Final milestone review before submission. Lock in your build, polish your demo, and prep for judging.',                                  color: '#fbbf24', image: 'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=800&q=80' },
+  { day: 'Day 1', date: '08:30 AM', title: 'Reporting', detail: 'Check-in, kit distribution and team verification.', color: '#00f5ff', image: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&q=80' },
+  { day: 'Day 1', date: '10:00 AM', title: 'Inauguration', detail: 'Official opening & welcome address.', color: '#a855f7', image: 'https://images.unsplash.com/photo-1475721027785-f74eccf877e2?w=800&q=80' },
+  { day: 'Day 1', date: '10:30 AM', title: 'Hackathon Starts', detail: 'The clock starts. Let the building begin.', color: '#22d3ee', image: 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=800&q=80' },
+  { day: 'Day 1', date: '12:00 PM', title: 'Session 01', detail: 'Learn, connect and get inspired.', color: '#34d399', image: 'https://images.unsplash.com/photo-1531482615713-2afd69097998?w=800&q=80' },
+  { day: 'Day 1', date: '02:00 PM', title: 'Session 02', detail: 'Level up your skills and knowledge.', color: '#f59e0b', image: 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=800&q=80' },
+  { day: 'Day 1', date: '05:00 PM', title: 'Assessment Round 01', detail: 'Your progress, your evaluation.', color: '#fb923c', image: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=800&q=80' },
+  { day: 'Day 1', date: '07:30 PM', title: 'Dinner', detail: 'Recharge, refuel and get ready for more !', color: '#f43f5e', image: 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=800&q=80' },
+  { day: 'Day 2', date: '09:00 PM', title: 'Cultural Night', detail: 'Unwind, enjoy and celebrate together.', color: '#e879f9', image: 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=800&q=80' },
+  { day: 'Day 2', date: '11:00 PM', title: 'Assessment Round 02', detail: 'One more push towards excellence.', color: '#818cf8', image: 'https://images.unsplash.com/photo-1517048676732-d65bc937f952?w=800&q=80' },
+  { day: 'Day 2', date: '07:00 AM', title: 'Happiness Session', detail: 'Mental refresh. Positive vibes only !', color: '#2dd4bf', image: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=800&q=80' },
+  { day: 'Day 2', date: '08:00 AM', title: 'Breakfast', detail: 'Fresh start. New energy !', color: '#38bdf8', image: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&q=80' },
+  { day: 'Day 2', date: '10:00 AM', title: 'Final Assessment', detail: 'The final build. Show your best !', color: '#c084fc', image: 'https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=800&q=80' },
+  { day: 'Day 2', date: '11:00 AM', title: 'Power Judging', detail: 'Top ideas. Expert evaluation.', color: '#facc15', image: 'https://images.unsplash.com/photo-1552664730-d307ca884978?w=800&q=80' },
+  { day: 'Day 2', date: '12:00 AM', title: 'Result & Winner Announcement', detail: 'Champions are real !!!!', color: '#fbbf24', image: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=800&q=80' },
 ]
 
 const COUNT = TIMELINE.length
@@ -260,7 +266,7 @@ function DetailPanel({ activeItem, mobile = false, vw: viewportW = 390 }) {
                   color: activeItem.color, background: `${activeItem.color}18`,
                   border: `1px solid ${activeItem.color}44`, marginBottom: 5,
                 }}>
-                  {activeItem.date}
+                  {activeItem.day ? `${activeItem.day} · ${activeItem.date}` : activeItem.date}
                 </div>
                 <h2 className="font-pixel font-black uppercase" style={{
                   fontSize: 'clamp(0.7rem, 3.5vw, 0.9rem)',
@@ -330,7 +336,7 @@ function DetailPanel({ activeItem, mobile = false, vw: viewportW = 390 }) {
                   border: `1px solid ${activeItem.color}44`,
                 }}
               >
-                {activeItem.date}
+                {activeItem.day ? `${activeItem.day} · ${activeItem.date}` : activeItem.date}
               </div>
 
               {/* Title */}

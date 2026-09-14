@@ -325,12 +325,22 @@ export default function GateCoordinator() {
             </button>
           </form>
 
-          <div className="mt-5 p-3 rounded bg-[#0f1422] border border-slate-800 text-[10px] text-slate-400 font-mono">
-            <strong>Default Gate Access:</strong>
-            <br />
-            Email: <span className="text-slate-200">gate.coordinator@codefiesta.in</span>
-            <br />
-            Password: <span className="text-slate-200">gate_access_cf5</span>
+          <div className="mt-5 p-3 rounded bg-[#0f1422] border border-slate-800 text-[10px] text-slate-400 font-mono space-y-1.5">
+            <div className="flex items-center justify-between">
+              <strong className="text-amber-300">Authorized Gate Credentials:</strong>
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail('coordinator@codefiesta.in')
+                  setPassword('gate123')
+                }}
+                className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/40 text-[9px] font-mono"
+              >
+                Auto-Fill
+              </button>
+            </div>
+            <div>Email: <span className="text-slate-200">coordinator@codefiesta.in</span> (or gate.coordinator@codefiesta.in)</div>
+            <div>Password: <span className="text-slate-200">gate123</span> (or gate_access_cf5)</div>
           </div>
         </div>
       </div>

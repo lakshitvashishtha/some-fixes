@@ -20,24 +20,24 @@ import TeamPage from './components/TeamPage.jsx'
 const modalData = {
   aboutModal: {
     title: 'ABOUT CODEFIESTA 5.0',
-    content: `Codefiesta 5.0 is the premier national 24-hour hackathon hosted by Global Institute of Technology (GIT), Jaipur in association with Hack2Skill and GRRAS Solutions. Build cutting-edge solutions across 14 emerging tracks and compete for a ₹7,00,000 prize pool!`
+    content: `Codefiesta 5.0 is the premier national 24-hour hackathon designed to unite bold thinkers, developers, and designers. Build innovative digital worlds, AI solutions, and decentralized protocols with peers across the nation.`,
   },
   themeModal: {
-    title: 'HACKATHON THEMES (14 OFFICIAL TRACKS)',
-    content: `• Web 3.0 • EdTech • Healthcare<br>• GenAI • Agentic AI • Robotics & Drones<br>• IOT • Cybersecurity • Women Safety<br>• Agriculture • Road Safety • Smart Automation<br>• Fintech • GovTech`
+    title: 'HACKATHON THEMES',
+    content: `• Generative AI & Intelligent Agents<br>• Decentralized Autonomous Web & Cyber Resilience<br>• Climate Tech & Smart Cities<br>• Open Innovation & Creative Frontier`,
   },
   prizesModal: {
     title: 'PRIZE POOL BREAKDOWN',
-    content: `🏆 <strong>Total Prize Pool: ₹7,00,000</strong><br>• <strong>₹1,50,000+</strong> Direct Cash Prizes<br>• <strong>₹2,00,000</strong> Incubation & Seed Grants<br>• Track Winners, Best All-Girls Team, & Swag Kits<br>• Exclusive internship and fast-track opportunities with partners.`
+    content: `🏆 <strong>Grand Champion:</strong> $5,000 + Venture Fast-track<br>🥈 <strong>First Runner-Up:</strong> $3,000 + Cloud Credits<br>🥉 <strong>Second Runner-Up:</strong> $2,000<br>✨ <strong>Special Category Prizes:</strong> Best Web3, Best UI/UX, & Most Creative Project.`,
   },
   timelineModal: {
     title: 'EVENT TIMELINE',
-    content: `• <strong>October 8:</strong> Opening Ceremony & Problem Statements Unlocked<br>• <strong>October 8, 11:00 AM:</strong> 24-Hour Hacking Sprint Begins<br>• <strong>Mentoring:</strong> 3 rounds of strict technical evaluations<br>• <strong>October 9, 11:00 AM:</strong> Final Pitch Demos & Grand Valedictory`
+    content: `• <strong>March 15:</strong> Registrations Close<br>• <strong>March 20, 10:00 AM:</strong> Opening Ceremony & Problem Reveal<br>• <strong>March 21:</strong> Mentorship rounds & Mid-evaluations<br>• <strong>March 22, 10:00 AM:</strong> Final Submissions & Pitch Demos`,
   },
   problemModal: {
     title: 'PROBLEM STATEMENTS',
-    content: `Problem statements spanning all 14 official tracks (Web 3.0, EdTech, Healthcare, GenAI, Agentic AI, Robotics & Drones, IOT, Cybersecurity, Women Safety, Agriculture, Road Safety, Smart Automation, Fintech, GovTech) are unlocked at hackathon launch!`
-  }
+    content: `Curated industry statements will be unlocked 2 hours before the hacking sprint begins. Prepare your development toolkits and stay tuned on our Discord server!`,
+  },
 }
 
 export default function App() {
@@ -68,13 +68,6 @@ export default function App() {
 
   const openModal  = useCallback((key) => { playArcadeBeep(520); setActiveModal(key) }, [playArcadeBeep])
   const closeModal = useCallback(() => setActiveModal(null), [])
-
-  const toggleChiptune = useCallback(() => {
-    setSoundEnabled((prev) => {
-      if (!prev) setTimeout(() => playArcadeBeep(660), 0)
-      return !prev
-    })
-  }, [playArcadeBeep])
 
   // Smooth scroll (Lenis)
   useEffect(() => {
@@ -122,7 +115,7 @@ export default function App() {
         sectionOneForeground={
           <div className="relative flex flex-col h-full w-full">
             <SatelliteFloating />
-            <Navbar soundEnabled={soundEnabled} toggleChiptune={toggleChiptune} />
+            <Navbar />
             <Hero playArcadeBeep={playArcadeBeep} />
             <QuickStats />
           </div>
@@ -133,7 +126,6 @@ export default function App() {
         sectionFive={<PrizePoolPage />}
         sectionSix={<TeamPage />}
       />
-
 
       {activeData && (
         <InfoModal open={true} title={activeData.title} content={activeData.content} onClose={closeModal} />

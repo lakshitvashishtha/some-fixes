@@ -453,11 +453,23 @@ export default function Mentor() {
                       Mentor Feedback & Qualitative Evaluation Notes:
                     </label>
                     <textarea
-                      rows={3}
+                      ref={(el) => {
+                        if (el) {
+                          el.style.resize = 'none'
+                          el.style.boxSizing = 'border-box'
+                          el.style.height = 'auto'
+                          el.style.height = `${Math.max(el.scrollHeight, 72)}px`
+                        }
+                      }}
+                      onInput={(e) => {
+                        e.target.style.resize = 'none'
+                        e.target.style.height = 'auto'
+                        e.target.style.height = `${Math.max(e.target.scrollHeight, 72)}px`
+                      }}
                       placeholder="Enter specific recommendations, architectural notes, or feedback for the squad..."
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
-                      className="w-full rounded bg-[#111422] border border-slate-700 p-3 text-xs text-white outline-none focus:border-cyan-400 font-mono"
+                      className="w-full rounded-xl bg-[#0e1220] border border-slate-700/80 p-3.5 text-sm text-white outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 font-sans resize-none transition-all"
                     />
                   </div>
                 </div>
