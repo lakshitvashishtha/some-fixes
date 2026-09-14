@@ -522,6 +522,23 @@ function sharedStatePlugin() {
                 };
                 break;
               }
+              const member = (t.members || []).find((m) => (m.email || '').toLowerCase() === userEmail);
+              if (member) {
+                user = {
+                  id: member.id || ('usr_' + t.id),
+                  email: userEmail,
+                  name: member.name || `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Team Member',
+                  firstName: member.firstName || '',
+                  lastName: member.lastName || '',
+                  phone: member.phone || '',
+                  college: member.college || t.college || '',
+                  role: 'member',
+                  isLeader: false,
+                  teamId: t.id,
+                  teamName: t.name,
+                };
+                break;
+              }
             }
           }
           res.setHeader('Content-Type', 'application/json');

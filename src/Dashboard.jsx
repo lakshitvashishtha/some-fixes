@@ -589,10 +589,10 @@ export default function Dashboard() {
               />
               <div className="min-w-0">
                 <div className="text-[11px] text-white font-medium truncate">
-                  {user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : user.email.split('@')[0]}
+                  {user?.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : (user?.name || (user?.email ? user.email.split('@')[0] : 'Operative'))}
                 </div>
                 <div className="text-[9px] text-slate-400 truncate">
-                  {user.email}
+                  {user?.email || ''}
                 </div>
               </div>
             </div>
@@ -808,7 +808,7 @@ function VerificationPendingScreen({ user, team, onRefresh, onLogout }) {
     }
   }
 
-  const allMembers = team.members || []
+  const allMembers = team?.members || []
 
   return (
     <div className="min-h-dvh w-full bg-[#070910] text-slate-200 font-mono relative overflow-y-auto flex flex-col justify-between">
@@ -3115,6 +3115,7 @@ function ProblemTracksSection({ myTeam, isLeader, user, onTrackUpdated, problemS
 
 function OnGroundEvaluationLedger({ myTeam, user, assignedTable, evaluation, hackathonState }) {
   const cleanMyTeamTable = myTeam?.tableNumber && myTeam.tableNumber !== 'T-14' && myTeam.tableNumber !== 'UNASSIGNED' ? myTeam.tableNumber : null
+  const table = assignedTable || cleanMyTeamTable || null
   const rawEvals = hackathonState?.evaluations
   const evaluationsList = Array.isArray(rawEvals)
     ? rawEvals
@@ -3391,9 +3392,9 @@ function EventPassSection({ user, team, assignedTable }) {
   const teamName = team?.name || 'SOLO_OPERATIVE'
   const teamCode = team?.code || 'CF5-INDV'
   const trackName = team?.trackName || 'Agentic AI & Neural Systems'
-  const fullName = user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : 'Hacker Pilot'
-  const college = user.college || 'Global Institute of Technology, Jaipur'
-  const passId = `CF5-${(user.id || '0000').slice(-6).toUpperCase()}`
+  const fullName = user?.name || (user?.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : (user?.email ? user.email.split('@')[0] : 'Hacker Pilot'))
+  const college = user?.college || 'Global Institute of Technology, Jaipur'
+  const passId = `CF5-${(user?.id || '0000').slice(-6).toUpperCase()}`
 
   return (
     <div className="space-y-4 bg-[#0b0e17] border border-slate-800 rounded-xl p-5 sm:p-8">

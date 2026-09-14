@@ -77,9 +77,9 @@ function buildCandidatesFromTeams(teams = []) {
         college: m.college || leaderCollege,
         collegeName: m.college || leaderCollege,
         rollNumber: m.rollNumber || (isLeader ? t.leader?.rollNumber : '') || '',
-        course: m.course || (isLeader ? t.leader?.course : '') || 'CSE',
-        year: m.year || (isLeader ? t.leader?.year : '') || '1st',
-        gender: m.gender || (isLeader ? t.leader?.gender : '') || 'male',
+        course: m.course || (isLeader ? t.leader?.course : '') || '',
+        year: m.year || (isLeader ? t.leader?.year : '') || '',
+        gender: m.gender || (isLeader ? t.leader?.gender : '') || '',
         teamId: t.id,
         teamName: t.name,
         status: candidateStatus,
@@ -921,11 +921,6 @@ Track: ${mentor.track || 'All Tracks'}`
       'Role',
       'Email',
       'Contact Number',
-      'College ID / Roll Number',
-      'Course',
-      'Academic Year',
-      'Gender',
-      'Member Invite Status',
       'Transaction ID (UTR)',
       'Payment Status',
       'Amount (INR)',
@@ -933,9 +928,13 @@ Track: ${mentor.track || 'All Tracks'}`
       'Verified At',
     ]
 
-    const escapeCsv = (val) => {
-      if (val === null || val === undefined) return '""'
-      const str = String(val).replace(/"/g, '""')
+    const escapeCsv = (val, forceText = false) => {
+      if (val === null || val === undefined || val === '') return '""'
+      const str = String(val).trim().replace(/"/g, '""')
+      if (forceText && /^\d+$/.test(str) && str.length >= 10) {
+        // Prevent Excel/Spreadsheets from corrupting long UTRs or phone numbers into scientific notation (e.g. 3.21428E+017)
+        return `="""${str}"""`
+      }
       return `"${str}"`
     }
 
@@ -943,19 +942,10 @@ Track: ${mentor.track || 'All Tracks'}`
       escapeCsv(c.teamName),
       escapeCsv(c.collegeName),
       escapeCsv(c.candidateName),
-      escapeCsv(c.role),
+      escapeCsv(c.role === 'leader' ? 'Leader' : 'Member'),
       escapeCsv(c.email),
-      escapeCsv(c.phone),
-      escapeCsv(c.rollNumber),
-      escapeCsv(c.course || 'CSE'),
-      escapeCsv(c.year || '1st'),
-      escapeCsv(c.gender || 'male'),
-      escapeCsv(
-        c.isConfirmed || c.inviteStatus === 'accepted' || c.status === 'accepted' || c.role === 'leader'
-          ? 'Confirmed & Joined'
-          : 'Invite Pending'
-      ),
-      escapeCsv(c.utr),
+      escapeCsv(c.phone, true),
+      escapeCsv(c.utr, true),
       escapeCsv(c.paymentStatus),
       escapeCsv(c.amount),
       escapeCsv(c.submittedAt),
@@ -1318,7 +1308,7 @@ Track: ${mentor.track || 'All Tracks'}`
                     <th className="py-3.5 px-4">Team Name</th>
                     <th className="py-3.5 px-4">College Name</th>
                     <th className="py-3.5 px-4">Candidate Name</th>
-                    <th className="py-3.5 px-4">Course / Year</th>
+                    <th className="py-3.5 px-4">Role</th>
                     <th className="py-3.5 px-4">Emails</th>
                     <th className="py-3.5 px-4">Contact Number</th>
                     <th className="py-3.5 px-4">Transaction ID (UTR)</th>
@@ -1447,10 +1437,17 @@ Track: ${mentor.track || 'All Tracks'}`
                             </div>
                           </td>
 
-                          {/* 4. Course / Year */}
-                          <td className="py-3 px-4 whitespace-nowrap text-slate-300">
-                            <div>{c.course || 'CSE'} ({c.year || '1st'} Yr)</div>
-                            <div className="text-[9px] text-slate-500 capitalize">{c.gender || 'male'}</div>
+                          {/* 4. Role */}
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <span
+                              className={`px-2.5 py-1 rounded text-[10px] font-mono uppercase font-bold tracking-wider ${
+                                isLeader
+                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                  : 'bg-slate-800 text-slate-300 border border-slate-700'
+                              }`}
+                            >
+                              {isLeader ? 'Leader' : 'Member'}
+                            </span>
                           </td>
 
                           {/* 5. Emails */}
@@ -1865,7 +1862,7 @@ Track: ${mentor.track || 'All Tracks'}`
                             </td>
                             <td className="py-3 px-4 max-w-[180px] truncate text-slate-300">
                               <div className="truncate" title={c.collegeName}>{c.collegeName || '—'}</div>
-                              <div className="text-[9px] text-slate-500">{c.course || 'CSE'} ({c.year || '1st'} Yr)</div>
+                              {c.course && <div className="text-[9px] text-slate-500">{c.course} {c.year ? `(${c.year} Yr)` : ''}</div>}
                             </td>
                             <td className="py-3 px-4 whitespace-nowrap">
                               <div><a href={`mailto:${c.email}`} className="text-cyan-400 hover:underline font-mono text-[11px]">{c.email}</a></div>
