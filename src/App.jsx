@@ -31,8 +31,8 @@ const modalData = {
     content: `🏆 <strong>Grand Champion:</strong> $5,000 + Venture Fast-track<br>🥈 <strong>First Runner-Up:</strong> $3,000 + Cloud Credits<br>🥉 <strong>Second Runner-Up:</strong> $2,000<br>✨ <strong>Special Category Prizes:</strong> Best Web3, Best UI/UX, & Most Creative Project.`,
   },
   timelineModal: {
-    title: 'EVENT TIMELINE',
-    content: `• <strong>March 15:</strong> Registrations Close<br>• <strong>March 20, 10:00 AM:</strong> Opening Ceremony & Problem Reveal<br>• <strong>March 21:</strong> Mentorship rounds & Mid-evaluations<br>• <strong>March 22, 10:00 AM:</strong> Final Submissions & Pitch Demos`,
+    title: 'EVENT TIMELINE (OCTOBER 8–9, 2026)',
+    content: `• <strong>Sept 30:</strong> Registrations Close<br>• <strong>Oct 8, 08:30 AM:</strong> Reporting & Kit Distribution<br>• <strong>Oct 8, 10:00 AM:</strong> Inauguration & Welcome Address<br>• <strong>Oct 8, 10:30 AM:</strong> 24-Hour Hacking Sprint Starts<br>• <strong>Oct 8, 09:00 PM:</strong> Cultural Night<br>• <strong>Oct 9, 10:00 AM:</strong> Final Assessment & Code Freeze<br>• <strong>Oct 9, 11:00 AM:</strong> Power Judging Stage Pitches<br>• <strong>Oct 9, 12:00 PM:</strong> Result & Winner Announcement`,
   },
   problemModal: {
     title: 'PROBLEM STATEMENTS',

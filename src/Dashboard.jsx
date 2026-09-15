@@ -22,8 +22,8 @@ import {
 } from './api'
 import { getSocket, joinTeamRoom } from './socket'
 
-// Codefiesta 5.0 Hackathon Kickoff (Local IST)
-const EVENT_START = new Date('2026-10-09T08:00:00').getTime()
+// Codefiesta 5.0 Hackathon Kickoff (Local IST: Oct 8, 2026 at 08:30 AM)
+const EVENT_START = new Date('2026-10-08T08:30:00').getTime()
 const SUBMISSION_DEADLINE = new Date('2026-10-05T23:59:59').getTime()
 
 const OFFICIAL_TRACKS = [
@@ -3413,7 +3413,7 @@ function EventPassSection({ user, team, assignedTable }) {
 
         <div className="border-t border-slate-800/80 pt-3 text-[10px] font-mono text-slate-400 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
           <span>Venue: Global Institute of Technology, Sitapura, Jaipur</span>
-          <span className="text-tactical font-semibold">Reporting: Oct 8, 2026 · 8:00 AM</span>
+          <span className="text-tactical font-semibold">Reporting: Oct 8, 2026 · 8:30 AM</span>
         </div>
       </div>
     </div>
@@ -3427,7 +3427,7 @@ function EventPassSection({ user, team, assignedTable }) {
 function ResourcesSection() {
   const TIMELINE_EVENTS = [
     { time: '08:30 AM', day: 'Day 1 (Oct 8)', title: 'Reporting & Badge Collection' },
-    { time: '09:30 AM', day: 'Day 1 (Oct 8)', title: 'Inauguration Ceremony' },
+    { time: '10:00 AM', day: 'Day 1 (Oct 8)', title: 'Inauguration Ceremony' },
     { time: '10:30 AM', day: 'Day 1 (Oct 8)', title: 'Hackathon Starts (24-Hour Build Sprint)' },
     { time: '12:00 PM', day: 'Day 1 (Oct 8)', title: 'Session-1 Mentoring & Architecture Review' },
     { time: '01:00 PM', day: 'Day 1 (Oct 8)', title: 'Lunch Break & Refreshments' },

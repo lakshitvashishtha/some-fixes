@@ -23,13 +23,13 @@ const TIMELINE = [
   { day: 'Day 1', date: '02:00 PM', title: 'Session 02', detail: 'Level up your skills and knowledge.', color: '#f59e0b', image: 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=800&q=80' },
   { day: 'Day 1', date: '05:00 PM', title: 'Assessment Round 01', detail: 'Your progress, your evaluation.', color: '#fb923c', image: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=800&q=80' },
   { day: 'Day 1', date: '07:30 PM', title: 'Dinner', detail: 'Recharge, refuel and get ready for more !', color: '#f43f5e', image: 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=800&q=80' },
-  { day: 'Day 2', date: '09:00 PM', title: 'Cultural Night', detail: 'Unwind, enjoy and celebrate together.', color: '#e879f9', image: 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=800&q=80' },
-  { day: 'Day 2', date: '11:00 PM', title: 'Assessment Round 02', detail: 'One more push towards excellence.', color: '#818cf8', image: 'https://images.unsplash.com/photo-1517048676732-d65bc937f952?w=800&q=80' },
+  { day: 'Day 1', date: '09:00 PM', title: 'Cultural Night', detail: 'Unwind, enjoy and celebrate together.', color: '#e879f9', image: 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=800&q=80' },
+  { day: 'Day 1', date: '11:00 PM', title: 'Assessment Round 02', detail: 'One more push towards excellence.', color: '#818cf8', image: 'https://images.unsplash.com/photo-1517048676732-d65bc937f952?w=800&q=80' },
   { day: 'Day 2', date: '07:00 AM', title: 'Happiness Session', detail: 'Mental refresh. Positive vibes only !', color: '#2dd4bf', image: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=800&q=80' },
   { day: 'Day 2', date: '08:00 AM', title: 'Breakfast', detail: 'Fresh start. New energy !', color: '#38bdf8', image: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&q=80' },
   { day: 'Day 2', date: '10:00 AM', title: 'Final Assessment', detail: 'The final build. Show your best !', color: '#c084fc', image: 'https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=800&q=80' },
   { day: 'Day 2', date: '11:00 AM', title: 'Power Judging', detail: 'Top ideas. Expert evaluation.', color: '#facc15', image: 'https://images.unsplash.com/photo-1552664730-d307ca884978?w=800&q=80' },
-  { day: 'Day 2', date: '12:00 AM', title: 'Result & Winner Announcement', detail: 'Champions are real !!!!', color: '#fbbf24', image: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=800&q=80' },
+  { day: 'Day 2', date: '12:00 PM', title: 'Result & Winner Announcement', detail: 'Champions are real!!!', color: '#fbbf24', image: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=800&q=80' },
 ]
 
 const COUNT = TIMELINE.length
