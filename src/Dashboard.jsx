@@ -345,6 +345,10 @@ export default function Dashboard() {
 
     window.addEventListener('codefiesta_teams_updated', handleSync)
     window.addEventListener('hackathon:state-updated', handleSync)
+    window.addEventListener('payment:verified', handleSync)
+    window.addEventListener('payment:submitted', handleSync)
+    window.addEventListener('table:assigned', handleSync)
+    window.addEventListener('team:updated', handleSync)
     window.addEventListener('storage', handleSync)
     document.addEventListener('visibilitychange', handleVisibility)
 
@@ -352,6 +356,10 @@ export default function Dashboard() {
       clearInterval(interval)
       window.removeEventListener('codefiesta_teams_updated', handleSync)
       window.removeEventListener('hackathon:state-updated', handleSync)
+      window.removeEventListener('payment:verified', handleSync)
+      window.removeEventListener('payment:submitted', handleSync)
+      window.removeEventListener('table:assigned', handleSync)
+      window.removeEventListener('team:updated', handleSync)
       window.removeEventListener('storage', handleSync)
       document.removeEventListener('visibilitychange', handleVisibility)
     }

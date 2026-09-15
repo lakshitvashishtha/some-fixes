@@ -331,12 +331,20 @@ export default function Admin() {
       }
       window.addEventListener('codefiesta_teams_updated', onSync)
       window.addEventListener('hackathon:state-updated', onSync)
+      window.addEventListener('team:updated', onSync)
+      window.addEventListener('team:created', onSync)
+      window.addEventListener('payment:submitted', onSync)
+      window.addEventListener('payment:verified', onSync)
       window.addEventListener('storage', onSync)
       document.addEventListener('visibilitychange', onSync)
       return () => {
         clearInterval(interval)
         window.removeEventListener('codefiesta_teams_updated', onSync)
         window.removeEventListener('hackathon:state-updated', onSync)
+        window.removeEventListener('team:updated', onSync)
+        window.removeEventListener('team:created', onSync)
+        window.removeEventListener('payment:submitted', onSync)
+        window.removeEventListener('payment:verified', onSync)
         window.removeEventListener('storage', onSync)
         document.removeEventListener('visibilitychange', onSync)
       }

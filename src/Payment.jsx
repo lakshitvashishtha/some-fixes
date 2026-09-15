@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { fetchMe, fetchMyTeams, submitPaymentApi, getAllRegisteredTeams } from './api'
 import { QRCodeSvg } from './qrGenerator.jsx'
+import { broadcastClientEvent } from './socket.js'
 
 const UTR_REGEX = /^\d{12}$/
 
@@ -211,6 +212,8 @@ export default function Payment() {
       const res = await submitPaymentApi(team.id, value)
       if (res?.payment?.status === 'submitted') {
         setDone(true)
+        broadcastClientEvent('payment:submitted', { team: res.team || team, payment: res.payment })
+        broadcastClientEvent('codefiesta_teams_updated')
       }
     } catch (err) {
       setServerError(err.message)

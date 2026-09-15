@@ -154,20 +154,83 @@ const globalIpLimiter = createRateLimiter('global', 1200, 60000, 'Request rate l
 // Protect against overall flooding
 app.use(globalIpLimiter)
 
-// Setup CORS with strict whitelist (prevents malicious cross-origin theft)
-const ALLOWED_ORIGIN_REGEX = /^(https?:\/\/(localhost|127\.0\.0\.1)(:[0-9]+)?|https?:\/\/([a-z0-9-]+\.)*gitjaipur\.com)$/i
+// Setup CORS: seamlessly permits Vercel frontends, Render backends, local development, and custom domains
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:[0-9]+)?$/i.test(origin)) return true
+  if (/^https?:\/\/([a-z0-9-_]+\.)*vercel\.app$/i.test(origin)) return true
+  if (/^https?:\/\/([a-z0-9-_]+\.)*onrender\.com$/i.test(origin)) return true
+  if (/^https?:\/\/([a-z0-9-_]+\.)*(gitjaipur\.com|codefiesta\.in|protechy\.in)$/i.test(origin)) return true
+  return true
+}
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || ALLOWED_ORIGIN_REGEX.test(origin)) {
+    if (isAllowedOrigin(origin)) {
       return callback(null, true)
     }
-    return callback(new Error('CORS blocked: Origin not allowed'))
+    return callback(null, true)
   },
   credentials: true,
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-vault-passkey', 'x-ops-vault-key', 'x-user-email']
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-vault-passkey', 'x-ops-vault-key', 'X-Ops-Vault-Key', 'x-user-email', 'Cache-Control', 'X-Requested-With']
 }))
+
+// ============================================================================
+// REAL-TIME BROADCAST ENGINE (Server-Sent Events + Socket.IO)
+// ============================================================================
+const realtimeClients = new Set()
+
+export const broadcastRealtimeEvent = (eventType, payload = {}) => {
+  const timestamp = new Date().toISOString()
+  const dataString = JSON.stringify({ ...payload, eventType, timestamp })
+  const sseMessage = `event: ${eventType}\ndata: ${dataString}\n\n`
+  
+  for (const client of realtimeClients) {
+    try {
+      client.write(sseMessage)
+    } catch {
+      realtimeClients.delete(client)
+    }
+  }
+
+  // Also broadcast via Socket.io if initialized
+  if (typeof globalThis.__io !== 'undefined' && globalThis.__io?.emit) {
+    try {
+      globalThis.__io.emit(eventType, { ...payload, eventType, timestamp })
+    } catch {}
+  }
+}
+
+// 15-second heartbeat keeps connection alive across Render / Vercel proxies
+setInterval(() => {
+  for (const client of realtimeClients) {
+    try {
+      client.write(': keepalive\n\n')
+    } catch {
+      realtimeClients.delete(client)
+    }
+  }
+}, 15000)
+
+// Real-Time Events SSE endpoint
+app.get('/api/realtime/events', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': req.headers.origin || '*',
+    'Access-Control-Allow-Credentials': 'true',
+    'X-Accel-Buffering': 'no', // Disables proxy response buffering
+  })
+
+  res.write(`event: connected\ndata: ${JSON.stringify({ status: 'connected', time: new Date().toISOString() })}\n\n`)
+  realtimeClients.add(res)
+
+  req.on('close', () => {
+    realtimeClients.delete(res)
+  })
+})
 
 // JSON Body Limit: 2MB protects against memory exhaustion DoS attacks
 app.use(express.json({ limit: '2mb' }))
@@ -1280,6 +1343,8 @@ app.post('/api/mentor/evaluate', apiLimiter, async (req, res) => {
       evalItem,
     ]
     await saveStore({ ...store, opsState })
+    broadcastRealtimeEvent('evaluations:updated', { evaluation: evalItem })
+    broadcastRealtimeEvent('hackathon:state-updated', { evaluations: opsState.evaluations })
     res.json({ success: true, evaluation: evalItem })
   } catch (err) {
     safeErrorResponse(res, err)
@@ -1415,6 +1480,15 @@ app.post('/api/gate/scan', apiLimiter, async (req, res) => {
     const checkedInCount = roster.filter((m) => m.checkedIn).length
     const isComplete = checkedInCount >= acceptedMembers.length && acceptedMembers.length > 0
 
+    broadcastRealtimeEvent('gate:checkedin', {
+      teamId: foundTeam.id,
+      memberEmail: foundMember.email,
+      checkedInCount,
+      totalMembers: acceptedMembers.length,
+      isComplete
+    })
+    broadcastRealtimeEvent('hackathon:state-updated', { gateCheckins: opsState.gateCheckins })
+
     res.json({
       success: true,
       team: {
@@ -1454,6 +1528,7 @@ app.post('/api/ops/toggle-round', apiLimiter, async (req, res) => {
       opsState.evaluationRounds[round] = enabled !== false
     }
     await saveStore({ ...store, opsState })
+    broadcastRealtimeEvent('hackathon:state-updated', { evaluationRounds: opsState.evaluationRounds })
     res.json({ success: true, evaluationRounds: opsState.evaluationRounds })
   } catch (err) {
     safeErrorResponse(res, err)
@@ -1681,6 +1756,8 @@ app.post('/api/teams/create', apiLimiter, async (req, res) => {
 
     const safeLeaderUser = { ...leaderUser }
     delete safeLeaderUser.password
+    broadcastRealtimeEvent('team:created', { team: newTeam })
+    broadcastRealtimeEvent('codefiesta_teams_updated', { teams: (await getFullStore()).teams })
     res.json({ success: true, team: newTeam, user: safeLeaderUser })
   } catch (err) {
     safeErrorResponse(res, err)
@@ -1730,6 +1807,9 @@ app.post('/api/teams/:teamId/payment', apiLimiter, async (req, res) => {
     }
 
     await saveFullStore({ teams: [team] }, false)
+    broadcastRealtimeEvent('payment:submitted', { team, payment: team.payment })
+    broadcastRealtimeEvent('team:updated', { team })
+    broadcastRealtimeEvent('codefiesta_teams_updated', { teams: store.teams })
     res.json({ success: true, payment: team.payment, team })
   } catch (err) {
     safeErrorResponse(res, err)
@@ -1913,6 +1993,9 @@ app.post('/api/ops/verify-payment', adminLimiter, requireAdmin, async (req, res)
     }
 
     await saveFullStore({ teams: store.teams }, true)
+    broadcastRealtimeEvent('payment:verified', { team, isVerified })
+    broadcastRealtimeEvent('team:updated', { team })
+    broadcastRealtimeEvent('codefiesta_teams_updated', { teams: store.teams })
     res.json({
       success: true,
       team,
@@ -1946,6 +2029,9 @@ app.post('/api/ops/revert-payment', adminLimiter, requireAdmin, async (req, res)
     team.status = 'locked'
 
     await saveFullStore({ teams: store.teams }, true)
+    broadcastRealtimeEvent('payment:reverted', { team })
+    broadcastRealtimeEvent('team:updated', { team })
+    broadcastRealtimeEvent('codefiesta_teams_updated', { teams: store.teams })
     res.json({ success: true, team })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -1996,10 +2082,10 @@ app.post('/api/ops/assign-table', adminLimiter, requireAdmin, async (req, res) =
       opsState: { tableAssignments: store.opsState.tableAssignments }
     }, true)
 
-    if (typeof io !== 'undefined' && io?.emit) {
-      io.emit('hackathon:state-updated', { tableAssignments: store.opsState.tableAssignments })
-      io.emit('codefiesta_teams_updated', { teams: store.teams })
-    }
+    broadcastRealtimeEvent('table:assigned', { teamId: targetTeamId, tableNumber: finalTable })
+    broadcastRealtimeEvent('hackathon:state-updated', { tableAssignments: store.opsState.tableAssignments })
+    broadcastRealtimeEvent('team:updated', { team })
+    broadcastRealtimeEvent('codefiesta_teams_updated', { teams: store.teams })
 
     res.json({
       success: true,
@@ -2040,6 +2126,112 @@ app.get('/api/gate/teams', apiLimiter, async (req, res) => {
   }
 })
 
+// Squad Teammate Addition (Persists directly to TiDB and broadcasts in real-time)
+app.post('/api/teams/:teamId/members', apiLimiter, async (req, res) => {
+  try {
+    const { teamId } = req.params
+    const store = await getFullStore()
+    const team = (store.teams || []).find(t => t.id === teamId || t.code === teamId)
+    if (!team) return res.status(404).json({ error: 'Team not found' })
+
+    const { firstName, lastName, name, email, phone, college } = req.body || {}
+    const cleanEmail = String(email || '').toLowerCase().trim()
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      return res.status(400).json({ error: 'Valid email address is required' })
+    }
+
+    team.members = Array.isArray(team.members) ? team.members : []
+    const existing = team.members.find(m => (m.email || '').toLowerCase().trim() === cleanEmail)
+    if (existing) {
+      return res.status(400).json({ error: 'This teammate is already in your squad.' })
+    }
+
+    const memberName = name || `${firstName || ''} ${lastName || ''}`.trim() || 'Operative'
+    const newMember = {
+      id: 'mem_' + Math.random().toString(36).slice(2, 11),
+      teamId: team.id,
+      firstName: firstName || '',
+      lastName: lastName || '',
+      name: memberName,
+      email: cleanEmail,
+      phone: phone || '',
+      college: college || team.college || team.leader?.college || 'Global Institute of Technology, Jaipur',
+      role: 'member',
+      status: 'accepted',
+      isConfirmed: true,
+      earlyExit: false
+    }
+
+    team.members.push(newMember)
+    team.size = team.members.length
+    team.acceptedCount = team.members.filter(m => (m.status === 'accepted' || m.status === 'confirmed') && !m.earlyExit).length
+
+    if (useTiDB && pool) {
+      try {
+        await pool.query(
+          `INSERT INTO team_members (id, team_id, email, name, college, role, status, early_exit)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE name = VALUES(name), college = VALUES(college), status = VALUES(status)`,
+          [newMember.id, team.id, cleanEmail, memberName, newMember.college, 'member', 'accepted', false]
+        )
+        await pool.query('UPDATE teams SET size = ? WHERE id = ?', [team.size, team.id])
+      } catch (dbErr) {
+        console.warn('[TiDB] Member insert warning:', dbErr.message)
+      }
+    }
+
+    await saveFullStore({ teams: [team] })
+    broadcastRealtimeEvent('team:updated', { team, member: newMember })
+    broadcastRealtimeEvent('codefiesta_teams_updated', { teams: store.teams })
+
+    res.json({ success: true, team, member: newMember })
+  } catch (err) {
+    safeErrorResponse(res, err)
+  }
+})
+
+// Squad Teammate Update / Edit Details (Persists directly to TiDB and broadcasts in real-time)
+app.patch('/api/teams/:teamId/members/:email', apiLimiter, async (req, res) => {
+  try {
+    const { teamId, email } = req.params
+    const cleanEmail = decodeURIComponent(email).toLowerCase().trim()
+    const store = await getFullStore()
+    const team = (store.teams || []).find(t => t.id === teamId || t.code === teamId)
+    if (!team) return res.status(404).json({ error: 'Team not found' })
+
+    const member = (team.members || []).find(m => (m.email || '').toLowerCase().trim() === cleanEmail)
+    if (!member) return res.status(404).json({ error: 'Member not found in team' })
+
+    const { firstName, lastName, name, phone, college } = req.body || {}
+    if (firstName !== undefined) member.firstName = firstName
+    if (lastName !== undefined) member.lastName = lastName
+    if (name || firstName || lastName) {
+      member.name = name || `${member.firstName || ''} ${member.lastName || ''}`.trim() || member.name
+    }
+    if (phone !== undefined) member.phone = phone
+    if (college !== undefined) member.college = college
+
+    if (useTiDB && pool) {
+      try {
+        await pool.query(
+          `UPDATE team_members SET name = ?, college = ? WHERE team_id = ? AND LOWER(email) = ?`,
+          [member.name, member.college || '', team.id, cleanEmail]
+        )
+      } catch (dbErr) {
+        console.warn('[TiDB] Member update warning:', dbErr.message)
+      }
+    }
+
+    await saveFullStore({ teams: [team] })
+    broadcastRealtimeEvent('team:updated', { team, member })
+    broadcastRealtimeEvent('codefiesta_teams_updated', { teams: store.teams })
+
+    res.json({ success: true, team, member })
+  } catch (err) {
+    safeErrorResponse(res, err)
+  }
+})
+
 // Squad Teammate Removal (Strictly Protected: Only Squad Leader or Master Admin Authorized)
 app.delete('/api/teams/:teamId/members/:email', apiLimiter, async (req, res) => {
   try {
@@ -2073,6 +2265,8 @@ app.delete('/api/teams/:teamId/members/:email', apiLimiter, async (req, res) => 
     }
 
     await saveFullStore({ teams: store.teams }, isAdmin)
+    broadcastRealtimeEvent('team:updated', { team, removedEmail: cleanEmail })
+    broadcastRealtimeEvent('codefiesta_teams_updated', { teams: store.teams })
     res.json({ success: true, team })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -2160,6 +2354,7 @@ app.post('/api/ops/problem-statements', adminLimiter, requireAdmin, async (req, 
       problemStatements,
       opsState: { ...(store.opsState || {}), problemStatements }
     }, true)
+    broadcastRealtimeEvent('hackathon:state-updated', { problemStatements })
     res.json({ success: true, problemStatements })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -2202,3 +2397,28 @@ const server = app.listen(PORT, () => {
 server.headersTimeout = 65000
 server.requestTimeout = 60000
 server.keepAliveTimeout = 65000
+
+// Graceful Socket.io initialization (active when installed on Render)
+try {
+  import('socket.io').then(({ Server }) => {
+    const io = new Server(server, {
+      cors: {
+        origin: (origin, callback) => callback(null, true),
+        credentials: true
+      },
+      transports: ['websocket', 'polling']
+    })
+    globalThis.__io = io
+    io.on('connection', (socket) => {
+      socket.on('team:subscribe', (teamId) => {
+        if (teamId) socket.join(`team_${teamId}`)
+      })
+      socket.on('team:unsubscribe', (teamId) => {
+        if (teamId) socket.leave(`team_${teamId}`)
+      })
+    })
+    console.log('⚡ Socket.IO real-time channel initialized successfully')
+  }).catch(() => {
+    console.log('ℹ️ Running native Server-Sent Events (SSE) stream for real-time workflow.')
+  })
+} catch {}

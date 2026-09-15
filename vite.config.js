@@ -65,10 +65,33 @@ function sharedStatePlugin() {
     } catch {}
   };
 
+  const sseClients = new Set();
+  const broadcastDevEvent = (eventType, payload = {}) => {
+    const timestamp = new Date().toISOString();
+    const dataString = JSON.stringify({ ...payload, eventType, timestamp });
+    const msg = `event: ${eventType}\ndata: ${dataString}\n\n`;
+    for (const client of sseClients) {
+      try { client.write(msg); } catch { sseClients.delete(client); }
+    }
+  };
+
   return {
     name: 'shared-state-plugin',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
+        if (req.url === '/api/realtime/events') {
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache, no-transform',
+            'Connection': 'keep-alive',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Credentials': 'true',
+          });
+          res.write(`event: connected\ndata: ${JSON.stringify({ status: 'connected', time: new Date().toISOString() })}\n\n`);
+          sseClients.add(res);
+          req.on('close', () => { sseClients.delete(res); });
+          return;
+        }
         if (req.url === '/api/health' || req.url === '/health' || req.url === '/api/ping') {
           res.setHeader('Content-Type', 'application/json');
           res.setHeader('Access-Control-Allow-Origin', '*');
@@ -1164,7 +1187,122 @@ function sharedStatePlugin() {
 
           res.setHeader('Content-Type', 'application/json');
           res.setHeader('Access-Control-Allow-Origin', '*');
+          broadcastDevEvent('team:updated', { team: targetTeam, removedEmail: emailToDelete });
           res.end(JSON.stringify({ success: true, team: targetTeam || null }));
+          return;
+        }
+
+        // POST /api/teams/:id/members (Add Teammate)
+        if (req.method === 'POST' && req.url?.startsWith('/api/teams/') && req.url?.endsWith('/members')) {
+          const teamId = decodeURIComponent(req.url.split('?')[0].replace('/api/teams/', '').replace('/members', '')).trim();
+          let body = '';
+          req.on('data', (chunk) => { body += chunk; });
+          req.on('end', () => {
+            try {
+              const incoming = JSON.parse(body || '{}');
+              const cleanEmail = String(incoming.email || '').toLowerCase().trim();
+              if (!cleanEmail || !cleanEmail.includes('@')) {
+                res.statusCode = 400;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: 'Valid email address is required' }));
+                return;
+              }
+              const current = readDb();
+              const targetTeam = (current.teams || []).find((t) => t.id === teamId || t.code === teamId);
+              if (!targetTeam) {
+                res.statusCode = 404;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: 'Team not found' }));
+                return;
+              }
+              targetTeam.members = Array.isArray(targetTeam.members) ? targetTeam.members : [];
+              if (targetTeam.members.some((m) => (m.email || '').toLowerCase().trim() === cleanEmail)) {
+                res.statusCode = 400;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: 'This teammate is already in your squad.' }));
+                return;
+              }
+              const memberName = incoming.name || `${incoming.firstName || ''} ${incoming.lastName || ''}`.trim() || 'Operative';
+              const newMember = {
+                id: 'mem_' + Math.random().toString(36).slice(2, 11),
+                teamId: targetTeam.id,
+                firstName: incoming.firstName || '',
+                lastName: incoming.lastName || '',
+                name: memberName,
+                email: cleanEmail,
+                phone: incoming.phone || '',
+                college: incoming.college || targetTeam.college || targetTeam.leader?.college || 'Global Institute of Technology, Jaipur',
+                role: 'member',
+                status: 'accepted',
+                isConfirmed: true,
+                earlyExit: false,
+              };
+              targetTeam.members.push(newMember);
+              targetTeam.size = targetTeam.members.length;
+              targetTeam.acceptedCount = targetTeam.members.filter((m) => (m.status === 'accepted' || m.status === 'confirmed') && !m.earlyExit).length;
+              writeDb(current);
+
+              broadcastDevEvent('team:updated', { team: targetTeam, member: newMember });
+              broadcastDevEvent('codefiesta_teams_updated', { teams: current.teams });
+
+              res.setHeader('Content-Type', 'application/json');
+              res.setHeader('Access-Control-Allow-Origin', '*');
+              res.end(JSON.stringify({ success: true, team: targetTeam, member: newMember }));
+            } catch (err) {
+              res.statusCode = 500;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
+          return;
+        }
+
+        // PATCH /api/teams/:id/members/:email (Edit Teammate)
+        if (req.method === 'PATCH' && req.url?.startsWith('/api/teams/') && req.url?.includes('/members/')) {
+          const parts = req.url.split('?')[0].replace('/api/teams/', '').split('/members/');
+          const teamId = decodeURIComponent(parts[0] || '').trim();
+          const targetEmail = decodeURIComponent(parts[1] || '').toLowerCase().trim();
+          let body = '';
+          req.on('data', (chunk) => { body += chunk; });
+          req.on('end', () => {
+            try {
+              const incoming = JSON.parse(body || '{}');
+              const current = readDb();
+              const targetTeam = (current.teams || []).find((t) => t.id === teamId || t.code === teamId);
+              if (!targetTeam) {
+                res.statusCode = 404;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: 'Team not found' }));
+                return;
+              }
+              const member = (targetTeam.members || []).find((m) => (m.email || '').toLowerCase().trim() === targetEmail);
+              if (!member) {
+                res.statusCode = 404;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: 'Member not found in team' }));
+                return;
+              }
+              if (incoming.firstName !== undefined) member.firstName = incoming.firstName;
+              if (incoming.lastName !== undefined) member.lastName = incoming.lastName;
+              if (incoming.name || incoming.firstName || incoming.lastName) {
+                member.name = incoming.name || `${member.firstName || ''} ${member.lastName || ''}`.trim() || member.name;
+              }
+              if (incoming.phone !== undefined) member.phone = incoming.phone;
+              if (incoming.college !== undefined) member.college = incoming.college;
+
+              writeDb(current);
+              broadcastDevEvent('team:updated', { team: targetTeam, member });
+              broadcastDevEvent('codefiesta_teams_updated', { teams: current.teams });
+
+              res.setHeader('Content-Type', 'application/json');
+              res.setHeader('Access-Control-Allow-Origin', '*');
+              res.end(JSON.stringify({ success: true, team: targetTeam, member }));
+            } catch (err) {
+              res.statusCode = 500;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
           return;
         }
 
