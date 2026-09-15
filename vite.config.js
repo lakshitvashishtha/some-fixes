@@ -358,6 +358,24 @@ function sharedStatePlugin() {
                   return;
                 }
 
+                const db = readDb();
+                const inUsers = (db.users || []).some((u) => (u.email || '').toLowerCase() === cleanEmail);
+                const inTeams = (db.teams || []).some((t) =>
+                  (t.leader_email || '').toLowerCase() === cleanEmail ||
+                  (t.leaderEmail || '').toLowerCase() === cleanEmail ||
+                  (t.leader?.email || '').toLowerCase() === cleanEmail ||
+                  (t.members || []).some((m) => (m.email || '').toLowerCase() === cleanEmail)
+                );
+                if (!inUsers && !inTeams) {
+                  res.statusCode = 404;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({
+                    error: 'Not a registered user. No account found with this email. Please register your squad first.',
+                    notRegistered: true,
+                  }));
+                  return;
+                }
+
                 const today = new Date().toISOString().slice(0, 10);
                 let rateRecord = viteOtpLimits.get(cleanEmail) || { date: today, attempts: 0 };
                 if (rateRecord.date !== today) {
@@ -497,12 +515,13 @@ function sharedStatePlugin() {
                 }
 
                 if (!matchedUser) {
-                  matchedUser = {
-                    id: 'usr_' + Math.random().toString(36).slice(2, 9),
-                    email: cleanEmail,
-                    name: cleanEmail.split('@')[0],
-                    role: 'leader',
-                  };
+                  res.statusCode = 404;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({
+                    error: 'Not a registered user. No account found with this email. Please register your squad first.',
+                    notRegistered: true,
+                  }));
+                  return;
                 }
 
                 const safeUser = { ...matchedUser };

@@ -1106,6 +1106,41 @@ app.post('/api/auth/send-otp', authLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Please enter a valid email address.' })
     }
 
+    const store = await getFullStore()
+    const inUsers = (store.users || []).some(u => (u.email || '').toLowerCase() === email)
+    const inTeams = (store.teams || []).some(t =>
+      (t.leader_email || '').toLowerCase() === email ||
+      (t.leaderEmail || '').toLowerCase() === email ||
+      (t.leader?.email || '').toLowerCase() === email ||
+      (t.members || []).some(m => (m.email || '').toLowerCase() === email)
+    )
+    let isRegistered = inUsers || inTeams
+
+    // Check TiDB Cloud if active
+    if (!isRegistered && useTiDB && pool) {
+      try {
+        const [uRows] = await pool.query('SELECT id FROM users WHERE LOWER(email) = ? LIMIT 1', [email])
+        if (uRows && uRows.length > 0) isRegistered = true
+        if (!isRegistered) {
+          const [tRows] = await pool.query('SELECT id FROM teams WHERE LOWER(leader_email) = ? LIMIT 1', [email])
+          if (tRows && tRows.length > 0) isRegistered = true
+        }
+        if (!isRegistered) {
+          const [mRows] = await pool.query('SELECT id FROM team_members WHERE LOWER(email) = ? LIMIT 1', [email])
+          if (mRows && mRows.length > 0) isRegistered = true
+        }
+      } catch (dbCheckErr) {
+        console.warn('[TiDB] Check registered user warn:', dbCheckErr.message)
+      }
+    }
+
+    if (!isRegistered) {
+      return res.status(404).json({
+        error: 'Not a registered user. No account found with this email. Please register your squad first.',
+        notRegistered: true
+      })
+    }
+
     const today = new Date().toISOString().slice(0, 10)
     let rateRecord = otpRateLimits.get(email) || { date: today, attempts: 0 }
     if (rateRecord.date !== today) {
@@ -1234,12 +1269,10 @@ app.post('/api/auth/verify-otp', authLimiter, async (req, res) => {
     }
 
     if (!matchedUser) {
-      matchedUser = {
-        id: 'usr_' + Math.random().toString(36).slice(2, 9),
-        email,
-        name: email.split('@')[0],
-        role: 'leader',
-      }
+      return res.status(404).json({
+        error: 'Not a registered user. No account found with this email. Please register your squad first.',
+        notRegistered: true
+      })
     }
 
     const safeUser = { ...matchedUser }

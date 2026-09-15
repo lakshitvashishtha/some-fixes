@@ -825,6 +825,26 @@ async function handleFallback(path, options, err) {
       throw new Error('Please enter a valid email address.')
     }
 
+    const allTeams = getAllRegisteredTeams()
+    const inTeams = allTeams.some(t =>
+      (t.leader?.email && t.leader.email.toLowerCase() === email) ||
+      (t.leaderEmail && t.leaderEmail.toLowerCase() === email) ||
+      (t.leader_email && t.leader_email.toLowerCase() === email) ||
+      (t.members || []).some(m => (m.email || '').toLowerCase() === email)
+    )
+    let inStoredUser = false
+    try {
+      const raw = localStorage.getItem('cf_auth_user')
+      if (raw) {
+        const u = JSON.parse(raw)
+        if (u.email?.toLowerCase() === email) inStoredUser = true
+      }
+    } catch {}
+
+    if (!inTeams && !inStoredUser) {
+      throw new Error('Not a registered user. No account found with this email. Please register your squad first.')
+    }
+
     // Daily 5-attempt rate limit
     const today = new Date().toISOString().slice(0, 10)
     let rateData = {}
@@ -959,12 +979,7 @@ async function handleFallback(path, options, err) {
     }
 
     if (!matchedUser) {
-      matchedUser = {
-        id: 'usr_' + Math.random().toString(36).slice(2, 9),
-        email,
-        name: email.split('@')[0],
-        role: 'leader',
-      }
+      throw new Error('Not a registered user. No account found with this email. Please register your squad first.')
     }
 
     try {

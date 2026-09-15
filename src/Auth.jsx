@@ -1441,9 +1441,35 @@ export default function Auth() {
                           </div>
 
                           {otpError && (
-                            <p className="text-[10px] sm:text-xs text-red-400">
-                              {otpError}
-                            </p>
+                            otpError.toLowerCase().includes('not a registered user') || otpError.toLowerCase().includes('not registered') ? (
+                              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-300 text-xs font-mono space-y-2">
+                                <div className="flex items-start gap-2">
+                                  <span className="text-base leading-none">⚠️</span>
+                                  <div>
+                                    <p className="font-bold text-amber-300">Not a Registered User</p>
+                                    <p className="text-[11px] text-slate-300 mt-0.5">
+                                      No squad account was found for <span className="font-bold text-white">{loginEmail}</span>. Please register your squad first!
+                                    </p>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEmail(loginEmail.trim().toLowerCase())
+                                    setStep(1)
+                                    navigate('/register')
+                                  }}
+                                  className="w-full py-2 px-3 rounded-lg bg-tactical hover:bg-tactical/90 text-black font-bold text-xs font-mono uppercase tracking-wider transition flex items-center justify-center gap-1.5 shadow cursor-pointer"
+                                >
+                                  <span>🚀 Register Squad Here →</span>
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-[11px] sm:text-xs text-red-400 font-mono flex items-center gap-2">
+                                <span>⚠️</span>
+                                <span>{otpError}</span>
+                              </div>
+                            )
                           )}
 
                           <div className="pt-2">
@@ -1488,9 +1514,35 @@ export default function Auth() {
                           </div>
 
                           {otpError && (
-                            <p className="text-[10px] sm:text-xs text-red-400">
-                              {otpError}
-                            </p>
+                            otpError.toLowerCase().includes('not a registered user') || otpError.toLowerCase().includes('not registered') ? (
+                              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-300 text-xs font-mono space-y-2">
+                                <div className="flex items-start gap-2">
+                                  <span className="text-base leading-none">⚠️</span>
+                                  <div>
+                                    <p className="font-bold text-amber-300">Not a Registered User</p>
+                                    <p className="text-[11px] text-slate-300 mt-0.5">
+                                      No account found for <span className="font-bold text-white">{loginEmail}</span>. Please register your squad first!
+                                    </p>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEmail(loginEmail.trim().toLowerCase())
+                                    setStep(1)
+                                    navigate('/register')
+                                  }}
+                                  className="w-full py-2 px-3 rounded-lg bg-tactical hover:bg-tactical/90 text-black font-bold text-xs font-mono uppercase tracking-wider transition flex items-center justify-center gap-1.5 shadow cursor-pointer"
+                                >
+                                  <span>🚀 Register Squad Here →</span>
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-[11px] sm:text-xs text-red-400 font-mono flex items-center gap-2">
+                                <span>⚠️</span>
+                                <span>{otpError}</span>
+                              </div>
+                            )
                           )}
 
                           <div className="pt-2">
