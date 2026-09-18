@@ -92,14 +92,14 @@ const CORE_TEAM = [
   },
   {
     name: 'Aman Bagda',
-    role: 'Co-Lead Management Team',
+    role: 'Lead Management Team',
     photo: '/team-photos/aman-bagda.jpg',
     accentColor: '#facc15',
     tilt: 1.5,
   },
   {
     name: 'Mudit Paliwal',
-    role: 'Co-Lead PR Team',
+    role: 'Lead PR Team',
     photo: '/team-photos/mudit-paliwal.jpg',
     accentColor: '#fbbf24',
     tilt: -1.5,
