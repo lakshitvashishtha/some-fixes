@@ -4,7 +4,6 @@ import { motion } from 'framer-motion'
 const FS_TITLE_LG = '1.1rem'
 const FS_TITLE_SM = '1rem'
 const ICON_SIZE = 15
-const BTN_SIZE = 30
 
 const CONVENERS = [
   {
@@ -62,7 +61,7 @@ const TECHNICAL_TEAM = [
   },
   {
     name: 'Lakshay Yadav',
-    photo: '/team/lakshay-yadav.jpg',
+    photo: '/team-photos/lakshay-yadav.jpg',
     accentColor: '#fb923c',
     tilt: -1.5,
     linkedin: 'https://www.linkedin.com/in/shayisone/',
@@ -72,7 +71,7 @@ const TECHNICAL_TEAM = [
 const CORE_TEAM = [
   {
     name: 'Mudit Paliwal',
-    role: 'Co-Lead Sponsor Team',
+    role: 'Co-Lead PR Team',
     photo: '/team-photos/mudit-paliwal.jpg',
     accentColor: '#fbbf24',
     tilt: -1.5,
@@ -86,21 +85,21 @@ const CORE_TEAM = [
   },
   {
     name: 'Prabhat Kumar',
-    role: 'Co-Lead Sponsor Team',
+    role: 'Lead Sponsor Team',
     photo: '/team-photos/prabhat-kumar.jpg',
     accentColor: '#fb923c',
     tilt: -1,
   },
   {
     name: 'Eklavya Vaishnav',
-    role: 'Lead PR Team',
+    role: 'Co-Lead PR Team',
     photo: '/team-photos/eklavya-vaishnav.jpg',
     accentColor: '#f59e0b',
     tilt: 1.5,
   },
   {
     name: 'Aman Bagda',
-    role: 'Co-Lead Sponsor Team',
+    role: 'Co-Lead Registration Team',
     photo: '/team-photos/aman-bagda.jpg',
     accentColor: '#facc15',
     tilt: -2,
@@ -114,7 +113,7 @@ const CORE_TEAM = [
   },
   {
     name: 'Lakshit Vashishtha',
-    role: 'Lead Registration Team',
+    role: 'Co-Lead Registration Team',
     photo: '/team-photos/lakshit-vashishtha.jpg',
     accentColor: '#f5c344',
     tilt: -1.5,
@@ -175,10 +174,10 @@ function StarDivider() {
 
 function InstagramIcon({ size = ICON_SIZE }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="2" y="2" width="20" height="20" rx="5" />
       <circle cx="12" cy="12" r="4.5" />
-      <circle cx="17.2" cy="6.8" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="17.5" cy="6.5" r="1.2" fill="currentColor" stroke="none" />
     </svg>
   )
 }
@@ -191,23 +190,7 @@ function LinkedInIcon({ size = ICON_SIZE }) {
   )
 }
 
-function SocialPillButton({ href, label, accent, icon, text }) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      title={label}
-      aria-label={label}
-      className="flex-1 inline-flex items-center justify-center gap-1.5 py-1 px-2 rounded bg-[#090d18] border border-amber-400/30 text-[9px] font-pixel text-amber-400 hover:text-white hover:border-amber-400 hover:bg-amber-400/15 transition-all uppercase shadow-inner"
-    >
-      {icon}
-      <span>{text}</span>
-    </a>
-  )
-}
-
-function SocialButton({ href, label, accent, children }) {
+function SocialButton({ href, label, accent = '#fbbf24', children }) {
   return (
     <a
       href={href}
@@ -219,24 +202,27 @@ function SocialButton({ href, label, accent, children }) {
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        width: BTN_SIZE,
-        height: BTN_SIZE,
+        width: 28,
+        height: 28,
         borderRadius: 999,
-        color: accent,
-        background: 'rgba(2,8,23,0.55)',
-        border: `1.5px solid ${accent}55`,
+        color: accent || '#fbbf24',
+        background: 'rgba(5, 10, 20, 0.75)',
+        border: `1.5px solid ${accent ? `${accent}77` : 'rgba(251, 191, 36, 0.45)'}`,
         textDecoration: 'none',
-        transition: 'border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease',
+        transition: 'border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease',
+        boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.borderColor = accent
-        e.currentTarget.style.color = '#fff'
-        e.currentTarget.style.boxShadow = `0 0 12px ${accent}66`
+        e.currentTarget.style.borderColor = accent || '#fbbf24'
+        e.currentTarget.style.color = '#ffffff'
+        e.currentTarget.style.boxShadow = `0 0 10px ${accent ? `${accent}88` : 'rgba(251, 191, 36, 0.5)'}`
+        e.currentTarget.style.transform = 'translateY(-1px)'
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = `${accent}55`
-        e.currentTarget.style.color = accent
-        e.currentTarget.style.boxShadow = 'none'
+        e.currentTarget.style.borderColor = `${accent ? `${accent}77` : 'rgba(251, 191, 36, 0.45)'}`
+        e.currentTarget.style.color = accent || '#fbbf24'
+        e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.4)'
+        e.currentTarget.style.transform = 'translateY(0)'
       }}
     >
       {children}
@@ -359,7 +345,7 @@ function MemberCard({ member, delay = 0, large = false, showRole = false }) {
               fontSize: large ? FS_TITLE_LG : FS_TITLE_SM,
               color: '#f8fafc',
               lineHeight: 1.2,
-              marginBottom: showRole ? 6 : 0,
+              marginBottom: showRole && member.role ? 6 : 0,
             }}
           >
             {member.name}
@@ -376,24 +362,24 @@ function MemberCard({ member, delay = 0, large = false, showRole = false }) {
           )}
 
           {!large && (member.instagram || member.linkedin) && (
-            <div className="flex justify-center gap-1.5 mt-2.5">
+            <div className="flex items-center justify-center gap-2.5 mt-2.5">
               {member.instagram && (
-                <SocialPillButton
+                <SocialButton
                   href={member.instagram}
                   label={`${member.name} on Instagram`}
                   accent={accent}
-                  icon={<InstagramIcon size={12} />}
-                  text="INSTA"
-                />
+                >
+                  <InstagramIcon size={13} />
+                </SocialButton>
               )}
               {member.linkedin && (
-                <SocialPillButton
+                <SocialButton
                   href={member.linkedin}
                   label={`${member.name} on LinkedIn`}
                   accent={accent}
-                  icon={<LinkedInIcon size={12} />}
-                  text="LINK"
-                />
+                >
+                  <LinkedInIcon size={13} />
+                </SocialButton>
               )}
             </div>
           )}
@@ -475,4 +461,3 @@ export default function TeamPage() {
     </div>
   )
 }
-
