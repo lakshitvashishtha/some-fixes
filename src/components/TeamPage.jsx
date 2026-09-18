@@ -70,6 +70,34 @@ const TECHNICAL_TEAM = [
 
 const CORE_TEAM = [
   {
+    name: 'Lakshit Vashishtha',
+    role: 'Lead Registration Team',
+    photo: '/team-photos/lakshit-vashishtha.jpg',
+    accentColor: '#f5c344',
+    tilt: -1.5,
+  },
+  {
+    name: 'Prabhat Kumar',
+    role: 'Lead Sponsor Team',
+    photo: '/team-photos/prabhat-kumar.jpg',
+    accentColor: '#fb923c',
+    tilt: 1.5,
+  },
+  {
+    name: 'Sahil Yadav',
+    role: 'Lead Guest Management Team',
+    photo: '/team-photos/sahil-yadav.jpg',
+    accentColor: '#fbbf24',
+    tilt: -1,
+  },
+  {
+    name: 'Aman Bagda',
+    role: 'Co-Lead Management Team',
+    photo: '/team-photos/aman-bagda.jpg',
+    accentColor: '#facc15',
+    tilt: 1.5,
+  },
+  {
     name: 'Mudit Paliwal',
     role: 'Co-Lead PR Team',
     photo: '/team-photos/mudit-paliwal.jpg',
@@ -82,41 +110,6 @@ const CORE_TEAM = [
     photo: '/team-photos/aman-goyal.png',
     accentColor: '#f5c344',
     tilt: 1.5,
-  },
-  {
-    name: 'Prabhat Kumar',
-    role: 'Lead Sponsor Team',
-    photo: '/team-photos/prabhat-kumar.jpg',
-    accentColor: '#fb923c',
-    tilt: -1,
-  },
-  {
-    name: 'Eklavya Vaishnav',
-    role: 'Co-Lead PR Team',
-    photo: '/team-photos/eklavya-vaishnav.jpg',
-    accentColor: '#f59e0b',
-    tilt: 1.5,
-  },
-  {
-    name: 'Aman Bagda',
-    role: 'Co-Lead Registration Team',
-    photo: '/team-photos/aman-bagda.jpg',
-    accentColor: '#facc15',
-    tilt: -2,
-  },
-  {
-    name: 'Sahil Yadav',
-    role: 'Lead Guest Management Team',
-    photo: '/team-photos/sahil-yadav.jpg',
-    accentColor: '#fbbf24',
-    tilt: 1,
-  },
-  {
-    name: 'Lakshit Vashishtha',
-    role: 'Co-Lead Registration Team',
-    photo: '/team-photos/lakshit-vashishtha.jpg',
-    accentColor: '#f5c344',
-    tilt: -1.5,
   },
 ]
 
@@ -452,7 +445,7 @@ export default function TeamPage() {
 
         {/* 4. Core Team */}
         <SectionTitle title="Core Team" />
-        <div className="flex flex-wrap justify-center gap-6 sm:gap-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 sm:gap-8 justify-items-center max-w-4xl mx-auto">
           {CORE_TEAM.map((m, idx) => (
             <MemberCard key={m.name} member={m} delay={0.05 + idx * 0.06} showRole={true} />
           ))}
