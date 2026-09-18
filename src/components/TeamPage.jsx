@@ -61,7 +61,7 @@ const TECHNICAL_TEAM = [
   },
   {
     name: 'Lakshay Yadav',
-    photo: '/team-photos/lakshay-yadav.jpg',
+    photo: '/team-photos/lakshay-yadav.png',
     accentColor: '#fb923c',
     tilt: -1.5,
     linkedin: 'https://www.linkedin.com/in/shayisone/',
